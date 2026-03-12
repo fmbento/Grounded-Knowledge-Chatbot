@@ -75,7 +75,13 @@ export default function App() {
   };
 
   const totalKbSize = kbFiles.reduce((acc, file) => acc + file.size, 0);
-  const totalKbContent = kbFiles.map(f => `--- FILE: ${f.name} (Type: ${f.type}, Download: ${f.downloadUrl}) ---\n${f.content}`).join('\n\n');
+  const totalKbContent = kbFiles
+    .filter(f => f.name !== 'system_prompt.txt')
+    .map(f => `--- FILE: ${f.name} (Type: ${f.type}, Download: ${f.downloadUrl}) ---\n${f.content}`)
+    .join('\n\n');
+
+  const systemPromptFile = kbFiles.find(f => f.name === 'system_prompt.txt');
+  const baseSystemPrompt = systemPromptFile?.content || "Você é Salina, a Assistente Virtual das Bibliotecas da Universidade de Aveiro.";
 
   const executeTool = async (name: string, args: any) => {
     if (name === "getLibraryOccupancy") {
@@ -120,16 +126,14 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
       
       const systemInstruction = `
-        Você é um assistente especializado e estritamente limitado à base de conhecimento fornecida abaixo, exceto quando precisar de informações em tempo real sobre a ocupação das bibliotecas.
+        ${baseSystemPrompt}
         
-        REGRAS CRÍTICAS:
+        REGRAS ADICIONAIS DE FUNCIONAMENTO:
         1. Para perguntas sobre a ocupação das bibliotecas da UA (quantas pessoas, se está cheio/vazio), use a ferramenta 'getLibraryOccupancy'.
-        2. Para todas as outras perguntas, responda APENAS com base nos documentos fornecidos na BASE DE CONHECIMENTO.
-        3. Se a resposta não estiver na base de conhecimento e não for sobre ocupação em tempo real, diga educadamente que não possui essa informação.
-        4. NÃO use seu conhecimento geral prévio.
-        5. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair o valor que indica de onde essa informação foi obtida. Para ficheiros .md ou .txt, procure por '## Fonte'. Para PDFs, use o nome do ficheiro e o link de download.
-        6. FORMATO DE LINK: Escreva o link da fonte no final da sua resposta precedido pelo texto "Fonte, onde saber mais: " usando o formato Markdown: Fonte, onde saber mais: [Nome da Fonte](URL). Garanta que a URL seja clicável.
-        7. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: Fonte, onde saber mais: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
+        2. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
+        3. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
+        4. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
+        5. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
         
         MAPEAMENTO DE BIBLIOTECAS para 'getLibraryOccupancy':
         - BibUA: Biblioteca Central / Campus / UA.
