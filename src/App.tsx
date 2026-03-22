@@ -139,11 +139,13 @@ export default function App() {
       const opacKeywords = ['livro', 'pesquisar', 'biblioteca', 'opac', 'autor', 'título', 'assunto', 'sobre', 'por', 'obra', 'catálogo'];
       const scopusKeywords = ['artigo', 'científico', 'revista', 'journal', 'scopus', 'recurso eletrónico', 'base de dados', 'paper', 'publicação'];
       const eventKeywords = ['exposição', 'exhibition', 'show', 'workshop', 'webinar', 'conferência', 'debate', 'reunião', 'evento', 'agenda', 'cultural'];
+      const weatherKeywords = ['tempo', 'clima', 'meteorologia', 'chuva', 'sol', 'temperatura', 'graus', 'onde fica', 'localização', 'morada', 'endereço'];
       const lowerText = text.toLowerCase();
       return occupancyKeywords.some(kw => lowerText.includes(kw)) || 
              opacKeywords.some(kw => lowerText.includes(kw)) ||
              scopusKeywords.some(kw => lowerText.includes(kw)) ||
-             eventKeywords.some(kw => lowerText.includes(kw));
+             eventKeywords.some(kw => lowerText.includes(kw)) ||
+             weatherKeywords.some(kw => lowerText.includes(kw));
     };
 
     const shouldSkipContext = isToolRelatedQuery(input);
@@ -162,7 +164,9 @@ export default function App() {
       2. Para pesquisar livros, autores ou assuntos no catálogo das bibliotecas da UA, use a ferramenta 'searchOPAC'.
       3. Para pesquisar artigos científicos, revistas ou recursos eletrónicos, use a ferramenta 'searchScopus'.
       4. Para listar exposições, workshops ou eventos culturais nas bibliotecas da UA, use a ferramenta 'getLibraryEvents'. Use esta ferramenta APENAS se a consulta incluir palavras como "exposição", "exhibition", "show", "workshop", "evento" ou "agenda".
-      5. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
+      5. Para obter informações sobre o estado do tempo nas localidades das bibliotecas (Aveiro, Águeda, Oliveira de Azeméis), use a ferramenta 'getWeather'.
+      6. CONTEXTO DE USO DO TEMPO: Você DEVE usar a ferramenta 'getWeather' sempre que o utilizador perguntar sobre a ocupação das bibliotecas, onde fica cada biblioteca, onde fica a UA, ou diretamente sobre o tempo.
+      7. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
       6. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
       7. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
       8. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
@@ -283,6 +287,22 @@ export default function App() {
           },
         };
 
+        const weatherTool = {
+          name: "getWeather",
+          parameters: {
+            type: "OBJECT",
+            description: "Retrieves the current weather conditions in the locations of UA Libraries (Aveiro, Águeda, Oliveira de Azeméis).",
+            properties: {
+              biblioteca: {
+                type: "STRING",
+                description: "The library identifier to determine the location: BibUA (Aveiro), Mediateca (Aveiro), ISCA (Aveiro), ESAN (Oliveira de Azeméis), or ESTGA (Águeda). Defaults to BibUA.",
+                enum: ["BibUA", "Mediateca", "ISCA", "ESAN", "ESTGA"]
+              },
+            },
+            required: ["biblioteca"],
+          },
+        };
+
         const executeTool = async (name: string, args: any) => {
           if (name === "getLibraryOccupancy") {
             const bib = args.biblioteca;
@@ -356,6 +376,43 @@ export default function App() {
             }
           }
 
+          if (name === "getWeather") {
+            const bib = args.biblioteca || 'BibUA';
+            let latitude, longitude;
+
+            switch (bib) {
+              case 'BibUA':
+              case 'Mediateca':
+              case 'ISCA':
+                latitude = '40.6405';
+                longitude = '-8.6538';
+                break;
+              case 'ESAN':
+                latitude = '40.8621';
+                longitude = '-8.4770';
+                break;
+              case 'ESTGA':
+                latitude = '40.5745';
+                longitude = '-8.4439';
+                break;
+              default:
+                latitude = '40.6405';
+                longitude = '-8.6538';
+                break;
+            }
+
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`;
+            try {
+              const response = await fetch(url);
+              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+              const data = await response.json();
+              return JSON.stringify(data);
+            } catch (error: any) {
+              console.error("Error fetching weather:", error);
+              return `Erro ao obter o tempo: ${error.message}`;
+            }
+          }
+
           return "Unknown tool";
         };
 
@@ -376,7 +433,7 @@ export default function App() {
               config: {
                 systemInstruction: currentSystemInstruction,
                 temperature: 0.1,
-                tools: [{ functionDeclarations: [libraryOccupancyTool as any, searchOPACTool as any, searchScopusTool as any, libraryEventsTool as any] }],
+                tools: [{ functionDeclarations: [libraryOccupancyTool as any, searchOPACTool as any, searchScopusTool as any, libraryEventsTool as any, weatherTool as any] }],
               }
             });
           } catch (error: any) {
