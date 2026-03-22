@@ -111,12 +111,17 @@ async function startServer() {
 
   // UA Libraries Events proxy
   app.get('/api/ua-events', async (req, res) => {
+    const apiKey = process.env.TIMELY_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Timely API key not configured on server' });
+    }
+
     const url = 'https://timelyapp.time.ly/api/calendars/54744400/events?tags=677656875&timezone=Europe/Lisbon&per_page=12&page=1';
     const options = {
       method: 'GET',
       headers: {
         'accept': 'application/json, text/plain, */*',
-        'x-api-key': 'c6e5e0363b5925b28552de8805464c66f25ba0ce',
+        'x-api-key': apiKey,
         'Referer': 'https://agenda.ua.pt/',
       }
     };
