@@ -663,7 +663,7 @@ export default function App() {
                 <img 
                   src="https://salina.web.ua.pt/ua.png" 
                   alt="UA" 
-                  className="w-full h-full object-contain p-1"
+                  className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
                 />
               </div>
