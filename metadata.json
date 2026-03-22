@@ -1,5 +1,5 @@
 {
-  "name": "Grounded Knowledge Chatbot",
-  "description": "Chatbot especializado em responder perguntas baseadas exclusivamente em uma base de conhecimento de documentos Markdown.",
-  "requestFramePermissions": []
+  "name": "Salina UA",
+  "description": "Chatbot inteligente das Bibliotecas da Universidade de Aveiro. Pesquisa livros no OPAC, artigos na Scopus, consulta a ocupação das salas em tempo real, agenda cultural e meteorologia.",
+  "requestFramePermissions": ["geolocation"]
 }

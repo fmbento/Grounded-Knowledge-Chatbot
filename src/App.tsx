@@ -659,12 +659,26 @@ export default function App() {
               </button>
             )}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-sm">
-                <Bot size={24} />
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm border border-black/5 overflow-hidden">
+                <img 
+                  src="https://salina.web.ua.pt/ua.png" 
+                  alt="UA" 
+                  className="w-full h-full object-contain p-1"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <div>
-                <h1 className="font-semibold text-lg tracking-tight">Grounded Chatbot</h1>
-                <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-widest">Base de Conhecimento + Real-Time</p>
+                <h1 className="font-semibold text-lg tracking-tight">
+                  <span className="text-black">SALInA</span> <span className="text-gray-400 text-sm font-normal">(beta)</span>
+                </h1>
+                <a 
+                  href="https://www.ua.pt/pt/sbidm/salina" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-emerald-600 font-bold uppercase tracking-widest hover:underline block"
+                >
+                  Assistente IA das Bibliotecas UA v5.0
+                </a>
               </div>
             </div>
           </div>
@@ -684,13 +698,18 @@ export default function App() {
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-6">
-                <div className="w-24 h-24 bg-white rounded-[2.5rem] shadow-xl flex items-center justify-center text-emerald-600 mb-2 border border-black/5">
-                  <Bot size={48} />
+                <div className="w-24 h-24 bg-white rounded-[2.5rem] shadow-xl flex items-center justify-center text-emerald-600 mb-2 border border-black/5 overflow-hidden">
+                  <img 
+                    src="https://salina.web.ua.pt/salina.png" 
+                    alt="Salina" 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
                 <div className="space-y-2">
                   <h2 className="text-3xl font-light text-gray-800">Como posso ajudar?</h2>
                   <p className="text-gray-500 max-w-md mx-auto text-sm">
-                    Carregue seus arquivos .md ou pergunte sobre a ocupação das bibliotecas da UA em tempo real.
+                    Pesquise no catálogo OPAC, artigos na Scopus, consulte a ocupação das bibliotecas ou a agenda cultural.
                   </p>
                 </div>
                 
@@ -721,10 +740,19 @@ export default function App() {
                   className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div className={`flex gap-4 max-w-[90%] ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm overflow-hidden ${
                       message.role === 'user' ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-gray-600 border border-black/5'
                     }`}>
-                      {message.role === 'user' ? <User size={20} /> : <Bot size={20} />}
+                      {message.role === 'user' ? (
+                        <User size={20} />
+                      ) : (
+                        <img 
+                          src="https://salina.web.ua.pt/salina.png" 
+                          alt="Salina" 
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
                     </div>
                     <div className={`space-y-1.5 ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
                       <div className={`p-5 rounded-2xl shadow-sm text-sm leading-relaxed ${
