@@ -137,8 +137,11 @@ export default function App() {
     const isToolRelatedQuery = (text: string) => {
       const occupancyKeywords = ['ocupação', 'pessoas', 'cheio', 'vazio', 'lotado', 'quantos', 'lotação', 'movimento'];
       const opacKeywords = ['livro', 'pesquisar', 'biblioteca', 'opac', 'autor', 'título', 'assunto', 'sobre', 'por', 'obra', 'catálogo'];
+      const scopusKeywords = ['artigo', 'científico', 'revista', 'journal', 'scopus', 'recurso eletrónico', 'base de dados', 'paper', 'publicação'];
       const lowerText = text.toLowerCase();
-      return occupancyKeywords.some(kw => lowerText.includes(kw)) || opacKeywords.some(kw => lowerText.includes(kw));
+      return occupancyKeywords.some(kw => lowerText.includes(kw)) || 
+             opacKeywords.some(kw => lowerText.includes(kw)) ||
+             scopusKeywords.some(kw => lowerText.includes(kw));
     };
 
     const shouldSkipContext = isToolRelatedQuery(input);
@@ -155,10 +158,11 @@ export default function App() {
       REGRAS ADICIONAIS DE FUNCIONAMENTO:
       1. Para perguntas sobre a ocupação das bibliotecas da UA (quantas pessoas, se está cheio/vazio), use a ferramenta 'getLibraryOccupancy'.
       2. Para pesquisar livros, autores ou assuntos no catálogo das bibliotecas da UA, use a ferramenta 'searchOPAC'.
-      3. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
-      4. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
-      5. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
-      6. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
+      3. Para pesquisar artigos científicos, revistas ou recursos eletrónicos, use a ferramenta 'searchScopus'.
+      4. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
+      5. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
+      6. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
+      7. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
       
       MAPEAMENTO DE BIBLIOTECAS para 'getLibraryOccupancy':
       - BibUA: Biblioteca Central / Campus / UA.
@@ -178,6 +182,11 @@ export default function App() {
       - TRADUÇÃO CRÍTICA: Se 'idx' for "su", você DEVE traduzir os termos de pesquisa para Português Europeu (pt-PT) antes de chamar a ferramenta.
       - APRESENTAÇÃO DE RESULTADOS: Mostre no máximo 5 resultados. Para cada resultado, inclua o título, autor e ano, se disponíveis.
       - LINK PARA LISTA COMPLETA: No final da resposta, forneça sempre o link para a lista completa no OPAC: https://opac.ua.pt/cgi-bin/koha/opac-search.pl?q=[query_escaped]&idx=[idx]&sort_by=relevance (substitua [query_escaped] pelos termos de pesquisa com espaços e caracteres especiais codificados para URL, e [idx] pelo valor usado).
+
+      REGRAS PARA 'searchScopus':
+      - 'query': Construa uma equação de pesquisa baseada na consulta do utilizador (ex: termos chave).
+      - APRESENTAÇÃO DE RESULTADOS: Mostre no máximo 5 resultados. Para cada resultado, inclua o título, autores, publicação, ano e link.
+      - LINK PARA LISTA COMPLETA: No final da resposta, forneça sempre o link para a lista completa no Scopus que será devolvido pela ferramenta.
       
       HISTÓRICO DE PERGUNTAS ANTERIORES DO UTILIZADOR (PARA CONTEXTO):
       ${userHistoryText || "Nenhuma pergunta anterior."}
@@ -247,6 +256,21 @@ export default function App() {
           },
         };
 
+        const searchScopusTool = {
+          name: "searchScopus",
+          parameters: {
+            type: "OBJECT",
+            description: "Searches articles and electronic resources via the Scopus API. Use for queries about scientific articles, journals, or research papers.",
+            properties: {
+              query: {
+                type: "STRING",
+                description: "The search equation/keywords for Scopus search (e.g., 'artificial intelligence AND education')."
+              }
+            },
+            required: ["query"],
+          },
+        };
+
         const executeTool = async (name: string, args: any) => {
           if (name === "getLibraryOccupancy") {
             const bib = args.biblioteca;
@@ -294,6 +318,20 @@ export default function App() {
             }
           }
 
+          if (name === "searchScopus") {
+            const { query } = args;
+            const url = `/api/scopus-search?q=${encodeURIComponent(query)}`;
+            try {
+              const response = await fetch(url);
+              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+              const data = await response.json();
+              return JSON.stringify(data);
+            } catch (error: any) {
+              console.error("Error fetching Scopus search:", error);
+              return `Erro ao pesquisar no Scopus: ${error.message}`;
+            }
+          }
+
           return "Unknown tool";
         };
 
@@ -314,7 +352,7 @@ export default function App() {
               config: {
                 systemInstruction: currentSystemInstruction,
                 temperature: 0.1,
-                tools: [{ functionDeclarations: [libraryOccupancyTool as any, searchOPACTool as any] }],
+                tools: [{ functionDeclarations: [libraryOccupancyTool as any, searchOPACTool as any, searchScopusTool as any] }],
               }
             });
           } catch (error: any) {

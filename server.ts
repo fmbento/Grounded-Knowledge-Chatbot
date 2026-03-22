@@ -46,6 +46,69 @@ async function startServer() {
     }
   });
 
+  // Scopus Search proxy
+  app.get('/api/scopus-search', async (req, res) => {
+    const { q } = req.query;
+    if (!q) return res.status(400).json({ error: 'Query parameter "q" is required' });
+
+    const apiKey = process.env.SCOPUS_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Scopus API key not configured on server' });
+    }
+
+    const baseApiUrl = "https://api.elsevier.com/content/search/scopus";
+    const encodedQuery = encodeURIComponent(q as string);
+    const apiParams = `query=TITLE-ABS-KEY(${encodedQuery})&sort=-relevancy&apiKey=${apiKey}&count=5&start=0`;
+    const apiUrl = `${baseApiUrl}?${apiParams}`;
+
+    // Full results page URL
+    const fullResultsUrl = `https://www.scopus.com/results/results.uri?sort=rel-f&src=s&st1=${encodedQuery}&sid=&sot=b&sdt=b&sl=16&s=TITLE-ABS-KEY%28${encodedQuery}%29%23`;
+
+    try {
+      const response = await fetch(apiUrl, {
+        headers: { Accept: "application/json" }
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({
+          error: `HTTP error: ${response.status} ${response.statusText}`,
+          fullResultsUrl: fullResultsUrl
+        });
+      }
+
+      const data = await response.json();
+      const results = data["search-results"]?.entry || [];
+      const totalResults = data["search-results"]?.["opensearch:totalResults"] || "0";
+
+      // Process results
+      const formattedResults = results.map((item: any) => {
+        // Extract Scopus ID from eid (e.g., "2-s2.0-85123456789" -> "85123456789")
+        const scopusId = item.eid ? item.eid.replace("2-s2.0-", "") : null;
+        // Convert API link to Scopus inward link
+        const link = scopusId
+          ? `https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=${scopusId}&origin=inward`
+          : item["prism:url"] || "No link available";
+
+        return {
+          title: item["dc:title"] || "No title available",
+          authors: item["dc:creator"] || "No authors listed",
+          publication: item["prism:publicationName"] || "No publication info",
+          year: item["prism:coverDate"] ? item["prism:coverDate"].substring(0, 4) : "No year",
+          link: link
+        };
+      });
+
+      res.json({
+        totalResults: parseInt(totalResults),
+        results: formattedResults,
+        fullResultsUrl: fullResultsUrl
+      });
+    } catch (error: any) {
+      console.error("Error fetching Scopus search:", error);
+      res.status(500).json({ error: 'Failed to fetch Scopus results', details: error.message, fullResultsUrl });
+    }
+  });
+
   // KB files endpoint
   app.get('/api/kb', async (req, res) => {
     const kbPath = path.join(__dirname, 'KB');
