@@ -12,6 +12,7 @@ services:
       # Mapeamento do host para a pasta de dados do container
       # - /home/ubuntu/dockers/GitHub/Grounded-Knowledge-Chatbot/data:/app/data
       - ./.env:/app/.env
+      - ./KB:/app/KB
     environment:
       - NODE_ENV=production
       - PORT=3000

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI, GenerateContentResponse, Type, FunctionDeclaration } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 interface Message {
   id: string;
@@ -19,22 +20,6 @@ interface KBFile {
   type: string;
   downloadUrl: string;
 }
-
-const libraryOccupancyTool: FunctionDeclaration = {
-  name: "getLibraryOccupancy",
-  parameters: {
-    type: Type.OBJECT,
-    description: "Retrieves the last count of users in one of the UA Libraries. Use for queries about load, how many people, if it's busy or quiet. NOT for opening hours.",
-    properties: {
-      biblioteca: {
-        type: Type.STRING,
-        description: "The library identifier: BibUA (Main/Campus), Mediateca, ISCA, ESAN, or ESTGA.",
-        enum: ["BibUA", "Mediateca", "ISCA", "ESAN", "ESTGA"]
-      },
-    },
-    required: ["biblioteca"],
-  },
-};
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -75,28 +60,51 @@ export default function App() {
   };
 
   const totalKbSize = kbFiles.reduce((acc, file) => acc + file.size, 0);
-  const totalKbContent = kbFiles
-    .filter(f => f.name !== 'system_prompt.txt')
-    .map(f => `--- FILE: ${f.name} (Type: ${f.type}, Download: ${f.downloadUrl}) ---\n${f.content}`)
-    .join('\n\n');
+
+  // Smart RAG: Find relevant documents to stay within API token limits
+  const findRelevantContext = (query: string, files: KBFile[], maxChars: number = 600000) => {
+    if (files.length === 0) return "";
+    
+    const keywords = query.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+    
+    // Score files based on keyword matches
+    const scoredFiles = files
+      .filter(f => f.name !== 'system_prompt.txt')
+      .map(file => {
+        let score = 0;
+        const contentLower = file.content.toLowerCase();
+        const nameLower = file.name.toLowerCase();
+        
+        if (keywords.length === 0) {
+          // If no keywords, prioritize FAQs or general info
+          if (file.name.includes('FAQ') || file.name.includes('sobre_nos')) score = 1;
+        } else {
+          keywords.forEach(kw => {
+            if (contentLower.includes(kw)) score += 1;
+            if (nameLower.includes(kw)) score += 5; // Higher weight for filename matches
+          });
+        }
+        
+        return { ...file, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    let currentSize = 0;
+    const selectedFiles = [];
+
+    for (const file of scoredFiles) {
+      if (currentSize + file.content.length > maxChars) break;
+      selectedFiles.push(file);
+      currentSize += file.content.length;
+    }
+
+    return selectedFiles
+      .map(f => `--- FILE: ${f.name} (Type: ${f.type}, Download: ${f.downloadUrl}) ---\n${f.content}`)
+      .join('\n\n');
+  };
 
   const systemPromptFile = kbFiles.find(f => f.name === 'system_prompt.txt');
   const baseSystemPrompt = systemPromptFile?.content || "Você é Salina, a Assistente Virtual das Bibliotecas da Universidade de Aveiro.";
-
-  const executeTool = async (name: string, args: any) => {
-    if (name === "getLibraryOccupancy") {
-      const bib = args.biblioteca;
-      const url = `https://script.google.com/macros/s/AKfycbx5wRnGBHyq9JRYDXYPBlu2I1fSFDOb_zF7NVhqAQKuMnPMf4Oc6IXsW033LsdT0Kwo/exec?sheet=${bib}`;
-      try {
-        const response = await fetch(url);
-        const text = await response.text();
-        return text;
-      } catch (error: any) {
-        return `Error: ${error.message}`;
-      }
-    }
-    return "Unknown tool";
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,84 +130,343 @@ export default function App() {
       timestamp: new Date(),
     }]);
 
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Use Smart RAG to stay under the 250k token limit of the Free Tier
+    // Skip context if it's a tool-related query (e.g., library occupancy) to save tokens and avoid interference
+    const isToolRelatedQuery = (text: string) => {
+      const occupancyKeywords = ['ocupação', 'pessoas', 'cheio', 'vazio', 'lotado', 'quantos', 'lotação', 'movimento'];
+      const opacKeywords = ['livro', 'pesquisar', 'biblioteca', 'opac', 'autor', 'título', 'assunto', 'sobre', 'por', 'obra', 'catálogo'];
+      const lowerText = text.toLowerCase();
+      return occupancyKeywords.some(kw => lowerText.includes(kw)) || opacKeywords.some(kw => lowerText.includes(kw));
+    };
+
+    const shouldSkipContext = isToolRelatedQuery(input);
+    const relevantContext = shouldSkipContext ? "" : findRelevantContext(input, kbFiles);
+
+    const userHistoryText = messages
+      .filter(m => m.role === 'user')
+      .map(m => `- ${m.content}`)
+      .join('\n');
+
+    const systemInstruction = `
+      ${baseSystemPrompt}
       
-      const systemInstruction = `
-        ${baseSystemPrompt}
-        
-        REGRAS ADICIONAIS DE FUNCIONAMENTO:
-        1. Para perguntas sobre a ocupação das bibliotecas da UA (quantas pessoas, se está cheio/vazio), use a ferramenta 'getLibraryOccupancy'.
-        2. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
-        3. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
-        4. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
-        5. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
-        
-        MAPEAMENTO DE BIBLIOTECAS para 'getLibraryOccupancy':
-        - BibUA: Biblioteca Central / Campus / UA.
-        - Mediateca: Mediateca.
-        - ISCA: ISCA, ISCA-UA ou Domingos Cravo.
-        - ESAN: ESAN ou Escola Superior Aveiro-Norte.
-        - ESTGA: ESTGA ou Escola Superior de Tecnologia e Gestão de Águeda.
-        
-        BASE DE CONHECIMENTO:
-        ${totalKbContent || "Nenhum documento carregado ainda."}
-      `;
+      REGRAS ADICIONAIS DE FUNCIONAMENTO:
+      1. Para perguntas sobre a ocupação das bibliotecas da UA (quantas pessoas, se está cheio/vazio), use a ferramenta 'getLibraryOccupancy'.
+      2. Para pesquisar livros, autores ou assuntos no catálogo das bibliotecas da UA, use a ferramenta 'searchOPAC'.
+      3. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
+      4. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
+      5. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
+      6. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
+      
+      MAPEAMENTO DE BIBLIOTECAS para 'getLibraryOccupancy':
+      - BibUA: Biblioteca Central / Campus / UA.
+      - Mediateca: Mediateca.
+      - ISCA: ISCA, ISCA-UA ou Domingos Cravo.
+      - ESAN: ESAN ou Escola Superior Aveiro-Norte.
+      - ESTGA: ESTGA ou Escola Superior de Tecnologia e Gestão de Águeda.
 
-      let currentContents: any[] = [{ role: 'user', parts: [{ text: input }] }];
-      let finalResponse = "";
+      REGRAS PARA 'searchOPAC':
+      - 'query': Termos de pesquisa extraídos da pergunta.
+      - 'idx': Campo de pesquisa. 
+        - "Kw" (Keyword): Valor padrão se não mencionar título, autor ou assunto, ou se parecer uma referência bibliográfica (ex: "R.A. Serway, Physics...").
+        - "ti" (Title): Se mencionar pesquisa por título.
+        - "au" (Author): Se mencionar Autor/es ou pesquisa por um nome.
+        - "su" (Subject): Se mencionar pesquisa por assunto ou "sobre" algo.
+      - 'lng': Idioma da pergunta (padrão "pt").
+      - TRADUÇÃO CRÍTICA: Se 'idx' for "su", você DEVE traduzir os termos de pesquisa para Português Europeu (pt-PT) antes de chamar a ferramenta.
+      - APRESENTAÇÃO DE RESULTADOS: Mostre no máximo 5 resultados. Para cada resultado, inclua o título, autor e ano, se disponíveis.
+      - LINK PARA LISTA COMPLETA: No final da resposta, forneça sempre o link para a lista completa no OPAC: https://opac.ua.pt/cgi-bin/koha/opac-search.pl?q=[query_escaped]&idx=[idx]&sort_by=relevance (substitua [query_escaped] pelos termos de pesquisa com espaços e caracteres especiais codificados para URL, e [idx] pelo valor usado).
+      
+      HISTÓRICO DE PERGUNTAS ANTERIORES DO UTILIZADOR (PARA CONTEXTO):
+      ${userHistoryText || "Nenhuma pergunta anterior."}
+      
+      BASE DE CONHECIMENTO (CONTEXTO RELEVANTE):
+      ${relevantContext || (shouldSkipContext ? "(Contexto de ficheiros omitido para focar nos dados da ferramenta em tempo real)" : "Nenhum documento relevante encontrado para esta consulta.")}
+    `;
 
-      // Loop to handle potential function calls
-      while (true) {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: currentContents,
-          config: {
-            systemInstruction: systemInstruction,
-            temperature: 0.1,
-            tools: [{ functionDeclarations: [libraryOccupancyTool] }],
+    try {
+      // Check if we should use Gemini directly (Frontend) or go through the proxy (IAEDU)
+      const useIAEDU = false; // Set to true if IAEDU is preferred
+      let apiName = useIAEDU ? "IAEDU (Server Proxy)" : "Gemini (Direct Frontend)";
+
+      if (!useIAEDU) {
+        // DIRECT GEMINI CALL (Frontend) - As per System Prompt
+        const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_GEMINI_API_KEY || (process as any).env.GEMINI_API_KEY });
+        
+        // Load fallback models from env or use default list
+        const envModels = (import.meta as any).env.VITE_GEMINI_MODELS;
+        const fallbackModels = envModels 
+          ? envModels.split(',').map((m: string) => m.trim())
+          : [
+              "gemini-3-flash-preview",
+              "gemini-2.5-flash",
+              "gemini-2.5-flash-lite-preview",
+              "gemini-3.1-flash-lite-preview"
+            ];
+        let currentModelIndex = 0;
+
+        const libraryOccupancyTool = {
+          name: "getLibraryOccupancy",
+          parameters: {
+            type: "OBJECT",
+            description: "Retrieves the last count of users in one of the UA Libraries. Use for queries about load, how many people, if it's busy or quiet. NOT for opening hours.",
+            properties: {
+              biblioteca: {
+                type: "STRING",
+                description: "The library identifier: BibUA (Main/Campus), Mediateca, ISCA, ESAN, or ESTGA.",
+                enum: ["BibUA", "Mediateca", "ISCA", "ESAN", "ESTGA"]
+              },
+            },
+            required: ["biblioteca"],
+          },
+        };
+
+        const searchOPACTool = {
+          name: "searchOPAC",
+          parameters: {
+            type: "OBJECT",
+            description: "Searches the UA Libraries OPAC (Online Public Access Catalog). Use for finding books, authors, or subjects in the library collection.",
+            properties: {
+              query: {
+                type: "STRING",
+                description: "The search terms extracted from the user query. If searching by subject (idx='su'), these terms must be in European Portuguese."
+              },
+              idx: {
+                type: "STRING",
+                description: "The search field: 'Kw' (keyword/default), 'ti' (title), 'au' (author), 'su' (subject/about).",
+                enum: ["Kw", "ti", "au", "su"]
+              },
+              lng: {
+                type: "STRING",
+                description: "The language of the user's original question (e.g., 'pt', 'en')."
+              }
+            },
+            required: ["query", "idx", "lng"],
+          },
+        };
+
+        const executeTool = async (name: string, args: any) => {
+          if (name === "getLibraryOccupancy") {
+            const bib = args.biblioteca;
+            const url = `https://script.google.com/macros/s/AKfycbx5wRnGBHyq9JRYDXYPBlu2I1fSFDOb_zF7NVhqAQKuMnPMf4Oc6IXsW033LsdT0Kwo/exec?sheet=${bib}`;
+            let retryCount = 0;
+            while (true) {
+              try {
+                const response = await fetch(url);
+                if (response.status === 429) {
+                  retryCount++;
+                  if (retryCount >= 3) {
+                    return "De momento não é possível obter os dados de ocupação devido a excesso de tráfego. Por favor, tente mais tarde.";
+                  }
+                  console.warn(`Rate limit hit on tool (attempt ${retryCount}), retrying in 5s...`);
+                  await sleep(5000);
+                  continue;
+                }
+                return await response.text();
+              } catch (error: any) {
+                const errorMsg = error.message?.toLowerCase() || "";
+                if (errorMsg.includes("429")) {
+                  retryCount++;
+                  if (retryCount >= 3) {
+                    return "De momento não é possível obter os dados de ocupação devido a excesso de tráfego. Por favor, tente mais tarde.";
+                  }
+                  await sleep(5000);
+                  continue;
+                }
+                return `Error: ${error.message}`;
+              }
+            }
           }
-        });
 
-        const candidate = response.candidates[0];
-        const parts = candidate.content.parts;
-        
-        // Check for function calls
-        const functionCalls = response.functionCalls;
-        if (functionCalls && functionCalls.length > 0) {
-          const toolResults = [];
-          for (const fc of functionCalls) {
-            const result = await executeTool(fc.name, fc.args);
-            toolResults.push({
-              functionResponse: {
-                name: fc.name,
-                response: { result }
+          if (name === "searchOPAC") {
+            const { query, idx } = args;
+            const url = `/api/opac-search?q=${encodeURIComponent(query)}&idx=${idx}`;
+            try {
+              const response = await fetch(url);
+              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+              const data = await response.json();
+              return JSON.stringify(data);
+            } catch (error: any) {
+              console.error("Error fetching OPAC search:", error);
+              return `Erro ao pesquisar no OPAC: ${error.message}`;
+            }
+          }
+
+          return "Unknown tool";
+        };
+
+        let currentContents = [
+          { role: 'user', parts: [{ text: input }] }
+        ];
+
+        let finalResponseText = "";
+        let currentSystemInstruction = systemInstruction;
+
+        while (true) {
+          let response;
+          const currentModel = fallbackModels[currentModelIndex];
+          try {
+            response = await ai.models.generateContent({
+              model: currentModel,
+              contents: currentContents as any,
+              config: {
+                systemInstruction: currentSystemInstruction,
+                temperature: 0.1,
+                tools: [{ functionDeclarations: [libraryOccupancyTool as any, searchOPACTool as any] }],
               }
             });
+          } catch (error: any) {
+            // Check for rate limit (429) or similar transient errors
+            const errorMsg = error.message?.toLowerCase() || "";
+            if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("rate limit") || errorMsg.includes("too many requests")) {
+              // Try next model immediately if available
+              if (currentModelIndex < fallbackModels.length - 1) {
+                currentModelIndex++;
+                console.warn(`Rate limit hit on ${currentModel}. Switching immediately to fallback model: ${fallbackModels[currentModelIndex]}`);
+                continue;
+              }
+              finalResponseText = "De momento não é possível responder à questão devido a excesso de tráfego em todos os modelos disponíveis. Por favor, tente novamente mais tarde.";
+              break;
+            }
+            throw error; // Re-throw if it's not a rate limit error
           }
+
+          const candidate = response.candidates[0];
+          const functionCalls = response.functionCalls;
+
+          if (functionCalls && functionCalls.length > 0) {
+            const toolResults = [];
+            for (const fc of functionCalls) {
+              const result = await executeTool(fc.name, fc.args);
+              toolResults.push({
+                functionResponse: {
+                  name: fc.name,
+                  response: { result }
+                }
+              });
+            }
+            
+            // Remove KB context for subsequent turns if a tool was used, as per user requirement
+            if (currentSystemInstruction.includes("BASE DE CONHECIMENTO (CONTEXTO RELEVANTE):")) {
+              currentSystemInstruction = currentSystemInstruction.split("BASE DE CONHECIMENTO (CONTEXTO RELEVANTE):")[0] + 
+                "\nBASE DE CONHECIMENTO:\n(Contexto de ficheiros removido após ativação de ferramenta)";
+            }
+
+            currentContents.push(candidate.content as any);
+            currentContents.push({ role: 'user', parts: toolResults } as any);
+            continue;
+          }
+
+          finalResponseText = response.text || "";
           
-          // Add model's turn (the function call) and the tool response to history
-          currentContents.push(candidate.content);
-          currentContents.push({ role: 'user', parts: toolResults });
-          continue; // Ask model again with tool results
+          // Log usage with tokens and cost
+          const usage = response.usageMetadata;
+          if (usage) {
+            const inputTokens = usage.promptTokenCount;
+            const outputTokens = usage.candidatesTokenCount;
+            // Gemini 1.5 Flash Pricing (approximate for Gemini 3 Flash Preview)
+            // Input: $0.075 / 1M tokens
+            // Output: $0.30 / 1M tokens
+            const cost = (inputTokens * 0.000000075) + (outputTokens * 0.0000003);
+            const costEstimate = cost.toFixed(6);
+
+            fetch('/api/log-usage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                api: `${apiName} - ${currentModel}`, 
+                message: input,
+                inputTokens,
+                outputTokens,
+                costEstimate
+              })
+            }).catch(err => console.warn('Failed to log usage to server:', err));
+          }
+
+          break;
         }
 
-        // No more function calls, get the text
-        finalResponse = response.text || "";
-        break;
-      }
+        setMessages(prev => prev.map(msg => 
+          msg.id === assistantMessageId 
+            ? { ...msg, content: finalResponseText }
+            : msg
+        ));
 
-      setMessages(prev => prev.map(msg => 
-        msg.id === assistantMessageId 
-          ? { ...msg, content: finalResponse }
-          : msg
-      ));
+      } else {
+        // PROXY CALL (IAEDU)
+        let response;
+        let retryCount = 0;
+        while (true) {
+          response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: input,
+              systemInstruction: systemInstruction,
+              history: []
+            }),
+          });
+
+          if (response.status === 429) {
+            retryCount++;
+            if (retryCount >= 3) {
+              setMessages(prev => prev.map(msg => 
+                msg.id === assistantMessageId 
+                  ? { ...msg, content: "De momento não é possível responder à questão devido a excesso de tráfego. Por favor, tente novamente mais tarde." }
+                  : msg
+              ));
+              setIsLoading(false);
+              return;
+            }
+            console.warn(`Rate limit hit on proxy (attempt ${retryCount}), retrying in 5s...`);
+            await sleep(5000);
+            continue;
+          }
+          break;
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Erro na resposta do servidor');
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('ReadableStream não suportado pelo navegador');
+
+        // Log initial usage for proxy (tokens not available in stream yet)
+        fetch('/api/log-usage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api: apiName, message: input })
+        }).catch(err => console.warn('Failed to log usage to server:', err));
+
+        const decoder = new TextDecoder();
+        let accumulatedContent = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          accumulatedContent += chunk;
+
+          setMessages(prev => prev.map(msg => 
+            msg.id === assistantMessageId 
+              ? { ...msg, content: accumulatedContent }
+              : msg
+          ));
+        }
+      }
 
     } catch (err: any) {
       console.error('Chat Error:', err);
       setMessages(prev => prev.map(msg => 
         msg.id === assistantMessageId 
-          ? { ...msg, content: 'Erro ao processar resposta. Verifique sua conexão ou API key.' }
+          ? { ...msg, content: `Erro ao processar resposta: ${err.message}. Verifique os logs do servidor para mais detalhes.` }
           : msg
       ));
     } finally {
