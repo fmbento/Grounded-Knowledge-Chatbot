@@ -109,6 +109,61 @@ async function startServer() {
     }
   });
 
+  // UA Libraries Events proxy
+  app.get('/api/ua-events', async (req, res) => {
+    const url = 'https://timelyapp.time.ly/api/calendars/54744400/events?tags=677656875&timezone=Europe/Lisbon&per_page=12&page=1';
+    const options = {
+      method: 'GET',
+      headers: {
+        'accept': 'application/json, text/plain, */*',
+        'x-api-key': 'c6e5e0363b5925b28552de8805464c66f25ba0ce',
+        'Referer': 'https://agenda.ua.pt/',
+      }
+    };
+
+    try {
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const jsonResponse = await response.json();
+
+      const items = jsonResponse.data && jsonResponse.data.items ? jsonResponse.data.items : [];
+      const total = jsonResponse.data && jsonResponse.data.total ? jsonResponse.data.total : 0;
+
+      const events: any = {};
+      items.forEach((item: any, index: number) => {
+        const eventKey = `event${index + 1}`;
+        const venue = item.taxonomies && item.taxonomies.taxonomy_venue && item.taxonomies.taxonomy_venue[0] ? item.taxonomies.taxonomy_venue[0] : {};
+
+        events[eventKey] = {
+          title: item.title || '',
+          start_utc_datetime: item.start_utc_datetime || '',
+          end_datetime: item.end_datetime || '',
+          cost_type: item.cost_type || null,
+          image: item.images && item.images[0] && item.images[0].sizes && item.images[0].sizes.full && item.images[0].sizes.full.url ? item.images[0].sizes.full.url : '',
+          description_short: item.description_short || '',
+          venue: {
+            title: venue.title || '',
+            address: venue.address || '',
+            city: venue.city || '',
+            country: venue.country || '',
+            postal_code: venue.postal_code || '',
+            geo_location: venue.geo_location || ''
+          },
+          canonical_url: item.canonical_url || ''
+        };
+      });
+
+      res.json({
+        total: total,
+        events: events,
+        all_events_url: 'https://www.ua.pt/pt/agenda'
+      });
+    } catch (error: any) {
+      console.error("Error fetching UA events:", error);
+      res.status(500).json({ error: 'Failed to fetch UA events', details: error.message });
+    }
+  });
+
   // KB files endpoint
   app.get('/api/kb', async (req, res) => {
     const kbPath = path.join(__dirname, 'KB');

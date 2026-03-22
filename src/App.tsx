@@ -138,10 +138,12 @@ export default function App() {
       const occupancyKeywords = ['ocupação', 'pessoas', 'cheio', 'vazio', 'lotado', 'quantos', 'lotação', 'movimento'];
       const opacKeywords = ['livro', 'pesquisar', 'biblioteca', 'opac', 'autor', 'título', 'assunto', 'sobre', 'por', 'obra', 'catálogo'];
       const scopusKeywords = ['artigo', 'científico', 'revista', 'journal', 'scopus', 'recurso eletrónico', 'base de dados', 'paper', 'publicação'];
+      const eventKeywords = ['exposição', 'exhibition', 'show', 'workshop', 'webinar', 'conferência', 'debate', 'reunião', 'evento', 'agenda', 'cultural'];
       const lowerText = text.toLowerCase();
       return occupancyKeywords.some(kw => lowerText.includes(kw)) || 
              opacKeywords.some(kw => lowerText.includes(kw)) ||
-             scopusKeywords.some(kw => lowerText.includes(kw));
+             scopusKeywords.some(kw => lowerText.includes(kw)) ||
+             eventKeywords.some(kw => lowerText.includes(kw));
     };
 
     const shouldSkipContext = isToolRelatedQuery(input);
@@ -159,10 +161,11 @@ export default function App() {
       1. Para perguntas sobre a ocupação das bibliotecas da UA (quantas pessoas, se está cheio/vazio), use a ferramenta 'getLibraryOccupancy'.
       2. Para pesquisar livros, autores ou assuntos no catálogo das bibliotecas da UA, use a ferramenta 'searchOPAC'.
       3. Para pesquisar artigos científicos, revistas ou recursos eletrónicos, use a ferramenta 'searchScopus'.
-      4. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
-      5. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
-      6. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
-      7. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
+      4. Para listar exposições, workshops ou eventos culturais nas bibliotecas da UA, use a ferramenta 'getLibraryEvents'. Use esta ferramenta APENAS se a consulta incluir palavras como "exposição", "exhibition", "show", "workshop", "evento" ou "agenda".
+      5. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
+      6. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
+      7. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
+      8. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
       
       MAPEAMENTO DE BIBLIOTECAS para 'getLibraryOccupancy':
       - BibUA: Biblioteca Central / Campus / UA.
@@ -271,6 +274,15 @@ export default function App() {
           },
         };
 
+        const libraryEventsTool = {
+          name: "getLibraryEvents",
+          parameters: {
+            type: "OBJECT",
+            description: "Lists active, ongoing exhibitions and cultural events in UA Libraries spaces (workshops, webinars, conferences, etc.).",
+            properties: {},
+          },
+        };
+
         const executeTool = async (name: string, args: any) => {
           if (name === "getLibraryOccupancy") {
             const bib = args.biblioteca;
@@ -332,6 +344,18 @@ export default function App() {
             }
           }
 
+          if (name === "getLibraryEvents") {
+            try {
+              const response = await fetch('/api/ua-events');
+              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+              const data = await response.json();
+              return JSON.stringify(data);
+            } catch (error: any) {
+              console.error("Error fetching UA events:", error);
+              return `Erro ao obter a agenda de eventos: ${error.message}`;
+            }
+          }
+
           return "Unknown tool";
         };
 
@@ -352,7 +376,7 @@ export default function App() {
               config: {
                 systemInstruction: currentSystemInstruction,
                 temperature: 0.1,
-                tools: [{ functionDeclarations: [libraryOccupancyTool as any, searchOPACTool as any, searchScopusTool as any] }],
+                tools: [{ functionDeclarations: [libraryOccupancyTool as any, searchOPACTool as any, searchScopusTool as any, libraryEventsTool as any] }],
               }
             });
           } catch (error: any) {
