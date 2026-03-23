@@ -467,4 +467,10 @@ The system is now more intelligent and multilingual, leveraging the best of both
 
 ---
 
+**OPAC Subject Search**: If the user searches for a subject (idx: "su") and the query is not in Portuguese, the orchestrator will now translate the search term to Portuguese.
+**Scopus Search**: If the search is for Scopus and the query is not in English, the orchestrator will now include both the original term and its English translation separated by "OR" (e.g., "original term OR english translation").
+These rules help ensure that searches in specialized databases (like the UA library catalog or Scopus) are more effective by using the primary language of those systems.
+
+---
+
 **Last Updated:** March 23, 2026
