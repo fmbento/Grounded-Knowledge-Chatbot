@@ -193,14 +193,31 @@ async function startServer() {
             if (dataBuffer.length === 0) {
               content = `[O PDF ${filename} está vazio]`;
             } else {
-              // Com pdf-parse@1.1.1 e require, pdf deve ser a função diretamente
-              const pdfParser = typeof pdf === 'function' ? pdf : (pdf as any).default;
-              if (typeof pdfParser === 'function') {
-                const data = await pdfParser(dataBuffer);
-                content = data.text || "";
-              } else {
-                console.error(`pdf-parse is not a function for ${filename}. Type: ${typeof pdf}`);
-                content = `[Erro: pdf-parse não é uma função para ${filename}]`;
+              // Silenciar warnings ruidosos do pdf-parse (pdf.js) como "TT: undefined function"
+              const originalWarn = console.warn;
+              const originalLog = console.log;
+              console.warn = (...args: any[]) => {
+                if (typeof args[0] === 'string' && (args[0].includes('TT:') || args[0].includes('Warning:'))) return;
+                originalWarn(...args);
+              };
+              console.log = (...args: any[]) => {
+                if (typeof args[0] === 'string' && (args[0].includes('TT:') || args[0].includes('Warning:'))) return;
+                originalLog(...args);
+              };
+
+              try {
+                // Com pdf-parse@1.1.1 e require, pdf deve ser a função diretamente
+                const pdfParser = typeof pdf === 'function' ? pdf : (pdf as any).default;
+                if (typeof pdfParser === 'function') {
+                  const data = await pdfParser(dataBuffer);
+                  content = data.text || "";
+                } else {
+                  console.error(`pdf-parse is not a function for ${filename}. Type: ${typeof pdf}`);
+                  content = `[Erro: pdf-parse não é uma função para ${filename}]`;
+                }
+              } finally {
+                console.warn = originalWarn;
+                console.log = originalLog;
               }
             }
           } catch (err) {
