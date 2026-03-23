@@ -190,8 +190,19 @@ async function startServer() {
         if (type === '.pdf') {
           try {
             const dataBuffer = readFileSync(filePath);
-            const data = await pdf(dataBuffer);
-            content = data.text;
+            if (dataBuffer.length === 0) {
+              content = `[O PDF ${filename} está vazio]`;
+            } else {
+              // Com pdf-parse@1.1.1 e require, pdf deve ser a função diretamente
+              const pdfParser = typeof pdf === 'function' ? pdf : (pdf as any).default;
+              if (typeof pdfParser === 'function') {
+                const data = await pdfParser(dataBuffer);
+                content = data.text || "";
+              } else {
+                console.error(`pdf-parse is not a function for ${filename}. Type: ${typeof pdf}`);
+                content = `[Erro: pdf-parse não é uma função para ${filename}]`;
+              }
+            }
           } catch (err) {
             console.error(`Error parsing PDF ${filename}:`, err);
             content = `[Erro ao extrair texto do PDF: ${filename}]`;
