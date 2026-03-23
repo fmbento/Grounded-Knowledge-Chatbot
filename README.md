@@ -2,18 +2,20 @@
 
 ## 📋 Overview
 
-**Grounded-Knowledge-Chatbot** is an intelligent conversational AI system designed to provide reliable, knowledge-base-grounded responses. It integrates with multiple academic and research APIs, supports PDF knowledge base ingestion, and leverages the IAEDU AI platform for advanced natural language understanding.
+**Grounded-Knowledge-Chatbot** is an intelligent conversational AI system powered by **Google's Gemini API** with intelligent fallback model switching. It provides reliable, knowledge-base-grounded responses by integrating with multiple academic and research APIs for real-time data retrieval.
 
 The system features:
+- 🧠 **Google Gemini Integration** with multiple model fallbacks (Gemini 3 Flash, 2.5 Flash, etc.)
 - 📚 Multi-source knowledge base support (PDF, Markdown, Text files)
 - 🔗 Integration with academic search APIs (OPAC, Scopus)
-- 🎓 University of Aveiro event aggregation
-- 🤖 AI-powered responses via IAEDU integration
-- 📊 API usage logging and cost estimation
-- 🌐 Real-time streaming responses
-- 📱 Responsive React frontend
+- 🎓 Real-time university events aggregation
+- 🌦️ Weather API integration
+- 📊 Smart RAG (Retrieval-Augmented Generation) for token optimization
+- 🎯 Tool-based function calling for real-time data access
+- 🔄 Automatic model fallback on rate limits
+- 📱 Responsive React frontend with Tailwind CSS
 - 🐳 Docker support for easy deployment
-- 🔄 Full TypeScript support with type safety
+- 🔐 Full TypeScript support with type safety
 
 ---
 
@@ -23,6 +25,7 @@ The system features:
 
 - **Node.js** (v16 or higher)
 - **npm** (v7 or higher)
+- **Google Gemini API Key** (required)
 - **Docker & Docker Compose** (optional, for containerized deployment)
 
 ### Installation
@@ -88,28 +91,30 @@ docker-compose up --build -d
 Create a `.env` file in the root directory with the following variables:
 
 ```env
-# Server
-NODE_ENV=development
-PORT=3000
+# Gemini Models Fallback List (comma-separated)
+# The application will try models in order, switching automatically on rate limits
+VITE_GEMINI_MODELS="gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite-preview,gemini-3.1-flash-lite-preview"
+GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
 
-# IAEDU API Configuration
-IAEDU_ENDPOINT=https://api.iaedu.pt/v1/chat
-IAEDU_API_KEY=your-iaedu-api-key
-IAEDU_CHANNEL_ID=your-channel-id
-IAEDU_THREAD_ID=your-thread-id
-IAEDU_USER_INFO={"name":"Your Bot Name"}
+# IAEDU API Key (optional, for fallback)
+IAEDU_API_KEY="sk-usr-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+IAEDU_ENDPOINT="https://api.iaedu.pt/agent-chat//api/v1/agent/xxxxxxxxxxxxxxxxxxxx/stream"
+IAEDU_CHANNEL_ID="xxxxxxxxxxxxxxxxxxxxxxxx"
+IAEDU_THREAD_ID="xxxxxxxxxxxxxxxxxxxxxxx"
+IAEDU_USER_INFO='{"name": "Your Bot Name"}'
 
 # Academic APIs
-SCOPUS_API_KEY=your-scopus-api-key
-TIMELY_API_KEY=your-timely-api-key
+SCOPUS_API_KEY="your-scopus-api-key"
 
-# Google Generative AI (optional)
-GOOGLE_GENAI_API_KEY=your-google-genai-key
+# Timely API Key (UA Events)
+TIMELY_API_KEY="your-timely-api-key"
 ```
 
 **Important:** 
-- IAEDU credentials are required for chat functionality
-- Scopus and Timely API keys enable academic search and event features
+- **GEMINI_API_KEY** is required for the chatbot to function
+- Get your API key from [Google AI Studio](https://aistudio.google.com/)
+- The `VITE_GEMINI_MODELS` environment variable defines the fallback order - models are tried in order if rate limits are encountered
+- IAEDU credentials are optional and only used if `useIAEDU` flag is set to `true` in the code
 - Knowledge base files should be placed in the `KB/` directory
 
 ---
@@ -119,7 +124,7 @@ GOOGLE_GENAI_API_KEY=your-google-genai-key
 ```
 Grounded-Knowledge-Chatbot/
 ├── src/
-│   ├── App.tsx          # Main React application component
+│   ├── App.tsx          # Main React application with Gemini integration
 │   ├── main.tsx         # React entry point
 │   └── index.css        # Global styles
 ├── KB/                  # Knowledge base directory (PDFs, Markdown, Text)
@@ -157,20 +162,49 @@ npm run lint
 
 ---
 
-## 📚 Knowledge Base
+## 📚 Knowledge Base (KB)
 
 The chatbot uses a local knowledge base to ground its responses. Supported file formats:
 
 - **PDF files** (.pdf) - Automatically parsed and indexed
 - **Markdown files** (.md) - For structured documentation
 - **Text files** (.txt) - Plain text content
+- **System Prompt** (system_prompt.txt) - Custom system prompt for the AI (optional)
 
 ### Adding Knowledge Base Files
 
 1. Create a `KB/` directory in the project root (if not exists)
 2. Place your files in the `KB/` directory
-3. Restart the server to index new files
-4. Files are accessible via `/api/kb` endpoint and `/kb-files/{filename}` for downloads
+3. Optionally create a `system_prompt.txt` file to customize the bot's personality
+4. Restart the server to index new files
+5. Files are accessible via `/api/kb` endpoint and `/kb-files/{filename}` for downloads
+
+### Smart RAG (Retrieval-Augmented Generation)
+
+The system uses intelligent context selection to:
+- Score documents based on keyword matching
+- Prioritize relevant files to stay within Gemini's token limits (250k free tier limit)
+- Skip knowledge base context for tool-related queries (occupancy, weather, etc.) to optimize tokens
+- Automatically remove KB context after tool activation to avoid interference
+
+---
+
+## 🤖 Gemini Integration & Model Fallback Strategy
+
+The application uses Google's Gemini API with an intelligent fallback mechanism:
+
+1. **Primary Model**: `gemini-3-flash-preview` (latest preview model)
+2. **Fallback Models**: Automatically tries alternative models if rate limits are hit
+3. **Automatic Switching**: When a 429 (rate limit) error occurs, the system immediately switches to the next model in the list
+4. **Cost Optimization**: Uses pricing from Gemini Flash models (Input: $0.075/1M tokens, Output: $0.30/1M tokens)
+5. **Usage Logging**: Tracks token usage and estimated costs for each request
+
+### Available Gemini Models
+
+- `gemini-3-flash-preview` - Latest preview release
+- `gemini-2.5-flash` - Latest stable Flash model
+- `gemini-2.5-flash-lite-preview` - Lightweight preview
+- `gemini-3.1-flash-lite-preview` - Latest lite preview
 
 ---
 
@@ -188,53 +222,63 @@ The chatbot uses a local knowledge base to ground its responses. Supported file 
 - `GET /api/scopus-search?q={query}` - Search Scopus academic database
 - `GET /api/ua-events` - Fetch University of Aveiro events
 
-### Chat & AI
-- `POST /api/chat` - Send message to IAEDU chatbot with streaming response
+### Real-Time Data
+- `getLibraryOccupancy` (Tool) - Get current library occupancy via Google Sheets
+- `getWeather` (Tool) - Get weather data from Open-Meteo API
+
+### Chat & Logging
 - `POST /api/log-usage` - Log API usage metrics and costs
-
-### Request/Response Examples
-
-**Chat Request:**
-```json
-{
-  "message": "What are the latest research trends in AI?",
-  "history": [],
-  "systemInstruction": "You are a knowledgeable librarian assistant"
-}
-```
-
-**Chat Response:** Streamed text chunks
-```
-The latest research trends in AI...
-```
-
-**KB Files Request:**
-```
-GET /api/kb
-```
-
-**KB Files Response:**
-```json
-[
-  {
-    "name": "document.pdf",
-    "content": "...",
-    "size": 1024,
-    "type": ".pdf",
-    "downloadUrl": "/kb-files/document.pdf"
-  }
-]
-```
 
 ---
 
-## 🔄 Real-Time Features
+## 🎯 Tool Integration
 
-The application uses **streaming responses** for:
+The chatbot can call these tools automatically based on user queries:
 
-- **Chat responses** - Real-time token streaming from IAEDU API
-- **API proxying** - Seamless integration with external academic databases
-- **Event aggregation** - Live university events fetching
+### 1. **getLibraryOccupancy**
+```typescript
+// Triggered by keywords: ocupação, pessoas, cheio, vazio, lotado, quantos, lotação, movimento
+// Gets real-time library occupancy from Google Sheets
+{
+  "biblioteca": "BibUA" | "Mediateca" | "ISCA" | "ESAN" | "ESTGA"
+}
+```
+
+### 2. **searchOPAC**
+```typescript
+// Triggered by keywords: livro, pesquisar, biblioteca, opac, autor, título, assunto
+// Searches the OPAC catalog
+{
+  "query": "search terms",
+  "idx": "Kw" | "ti" | "au" | "su",  // Keyword, Title, Author, Subject
+  "lng": "pt" | "en"
+}
+```
+
+### 3. **searchScopus**
+```typescript
+// Triggered by keywords: artigo, científico, revista, journal, scopus, paper, publicação
+// Searches scientific articles
+{
+  "query": "search equation"
+}
+```
+
+### 4. **getLibraryEvents**
+```typescript
+// Triggered by keywords: exposição, exhibition, workshop, evento, agenda, cultural
+// Gets university events
+{}
+```
+
+### 5. **getWeather**
+```typescript
+// Triggered by keywords: tempo, clima, chuva, sol, temperatura, onde fica
+// Gets weather data
+{
+  "biblioteca": "BibUA" | "Mediateca" | "ISCA" | "ESAN" | "ESTGA"
+}
+```
 
 ---
 
@@ -243,11 +287,12 @@ The application uses **streaming responses** for:
 ### Frontend
 - **React 19** - Modern UI framework
 - **Vite** - Lightning-fast build tool
-- **Tailwind CSS** - Utility-first styling
+- **Tailwind CSS 4** - Utility-first styling
 - **Lucide React** - Icon library
 - **Motion** - Animation library
 - **React Markdown** - Markdown rendering
 - **Remark GFM** - GitHub-flavored markdown support
+- **Google Generative AI SDK** - Official Gemini API client
 
 ### Backend
 - **Express.js** - Web framework
@@ -257,13 +302,31 @@ The application uses **streaming responses** for:
 - **Node-Fetch** - HTTP requests
 - **Form-Data** - Multipart form handling
 - **Multer** - File upload handling
-- **Google GenAI** - AI integration support
 
 ### DevOps & Build Tools
 - **Docker** - Containerization
 - **Docker Compose** - Multi-container orchestration
 - **TSX** - TypeScript execution
 - **Tailwind CSS** - Compiled styling
+
+### External APIs
+- **Google Gemini API** - AI model inference
+- **Scopus API** - Academic article search
+- **Timely API** - Event aggregation
+- **Open-Meteo API** - Weather data
+- **Google Sheets API** - Library occupancy data
+
+---
+
+## 🔄 Real-Time Features
+
+The application uses:
+
+- **Tool-Based Function Calling** - AI automatically calls tools when needed
+- **Real-time Context Selection** - Smart RAG selects only relevant KB files
+- **Rate Limit Handling** - Automatic model switching on API limits
+- **Token Optimization** - Stays within Gemini's free tier limits
+- **Streaming Responses** - Real-time streaming from Gemini API
 
 ---
 
@@ -302,6 +365,7 @@ For support, please:
 
 ## 📚 Additional Resources
 
+- [Google Gemini API Documentation](https://ai.google.dev/)
 - [Express.js Documentation](https://expressjs.com/)
 - [React Documentation](https://react.dev/)
 - [Vite Documentation](https://vitejs.dev/)
@@ -314,32 +378,48 @@ For support, please:
 
 ### Version 0.1.0
 - Initial release
-- Knowledge base integration (PDF, MD, TXT)
-- OPAC search proxy
+- Google Gemini API integration with model fallback
+- Knowledge base support (PDF, Markdown, Text)
+- Smart RAG (Retrieval-Augmented Generation)
+- Tool-based function calling
+- OPAC search integration
 - Scopus search integration
-- University of Aveiro events API
-- IAEDU chatbot integration
-- API usage logging
+- Real-time library occupancy via Google Sheets
+- Weather API integration
+- University of Aveiro events aggregation
+- API usage logging and cost estimation
 - Docker support
+- Rate limit handling with automatic model switching
 
 ---
 
 ## ⚠️ Troubleshooting
+
+### Gemini API Errors
+
+**Rate Limit (429) Errors**
+- The system automatically switches to fallback models
+- If all models are rate-limited, you'll see a friendly error message
+- Wait a few seconds and try again
+
+**Invalid API Key**
+- Verify your `VITE_GEMINI_API_KEY` is correctly set
+- Get a new key from [Google AI Studio](https://aistudio.google.com/)
 
 ### PDF Parsing Issues
 - Ensure PDFs are not corrupted
 - Check file permissions in the `KB/` directory
 - Console warnings about "TT: undefined function" are normal and suppressed
 
-### API Connection Errors
-- Verify all required environment variables are set
-- Check API keys and endpoints are correct
-- Ensure network connectivity to external services
-
 ### Build Issues
 - Clear node_modules: `rm -rf node_modules && npm install`
 - Clear build cache: `npm run clean`
 - Verify Node.js version: `node --version`
+
+### Knowledge Base Not Loading
+- Ensure the `KB/` directory exists
+- Check that files have correct extensions (.pdf, .md, .txt)
+- Restart the server after adding files
 
 ---
 
