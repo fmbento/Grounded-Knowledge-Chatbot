@@ -132,454 +132,205 @@ export default function App() {
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Use Smart RAG to stay under the 250k token limit of the Free Tier
-    // Skip context if it's a tool-related query (e.g., library occupancy) to save tokens and avoid interference
-    const isToolRelatedQuery = (text: string) => {
-      const occupancyKeywords = ['ocupação', 'pessoas', 'cheio', 'vazio', 'lotado', 'quantos', 'lotação', 'movimento'];
-      const opacKeywords = ['livro', 'pesquisar', 'biblioteca', 'opac', 'autor', 'título', 'assunto', 'sobre', 'por', 'obra', 'catálogo'];
-      const scopusKeywords = ['artigo', 'científico', 'revista', 'journal', 'scopus', 'recurso eletrónico', 'base de dados', 'paper', 'publicação'];
-      const eventKeywords = ['exposição', 'exhibition', 'show', 'workshop', 'webinar', 'conferência', 'debate', 'reunião', 'evento', 'agenda', 'cultural'];
-      const weatherKeywords = ['tempo', 'clima', 'meteorologia', 'chuva', 'sol', 'temperatura', 'graus', 'onde fica', 'localização', 'morada', 'endereço'];
-      const lowerText = text.toLowerCase();
-      return occupancyKeywords.some(kw => lowerText.includes(kw)) || 
-             opacKeywords.some(kw => lowerText.includes(kw)) ||
-             scopusKeywords.some(kw => lowerText.includes(kw)) ||
-             eventKeywords.some(kw => lowerText.includes(kw)) ||
-             weatherKeywords.some(kw => lowerText.includes(kw));
+    // --- STEP 1: ORCHESTRATION VIA IAEDU ---
+    // We use IAedu to interpret the intent and detect the language
+    const orchestrateIntent = async (query: string): Promise<{ intent: string, args: any, language: string }> => {
+      const orchestratorPrompt = `
+        Você é o Orquestrador do SALInA. Sua tarefa é analisar a pergunta do utilizador e decidir a melhor estratégia.
+        Responda APENAS em formato JSON válido com a seguinte estrutura:
+        {
+          "intent": "getLibraryOccupancy" | "searchOPAC" | "searchScopus" | "getLibraryEvents" | "getWeather" | "searchKB",
+          "args": { ... },
+          "language": "pt" | "en" | "es" | "fr" | "de"
+        }
+
+        Regras de Intenção:
+        - getLibraryOccupancy: perguntas sobre lotação, ocupação, quantas pessoas, se está cheio/vazio. Args: { "biblioteca": "BibUA" | "Mediateca" | "ISCA" | "ESAN" | "ESTGA" }
+        - searchOPAC: pesquisa de livros, autores, títulos ou assuntos no catálogo. Args: { "query": string, "idx": "Kw" | "ti" | "au" | "su" }
+        - searchScopus: artigos científicos, journals, bases de dados, papers. Args: { "query": string }
+        - getLibraryEvents: exposições, workshops, agenda cultural, eventos. Args: {}
+        - getWeather: tempo, clima, meteorologia, localização. Args: { "biblioteca": "BibUA" | "Mediateca" | "ISCA" | "ESAN" | "ESTGA" }
+        - searchKB: qualquer outra pergunta sobre as bibliotecas, serviços, horários, multas, ou conversa geral. Args: {}
+        
+        Nota: Se não tiver certeza, use "searchKB". Detete o idioma da pergunta e coloque no campo "language".
+      `;
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: query,
+            systemInstruction: orchestratorPrompt,
+            history: []
+          }),
+        });
+
+        if (!response.ok) throw new Error('IAedu Orchestrator failed');
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No reader');
+        
+        const decoder = new TextDecoder();
+        let accumulated = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          accumulated += decoder.decode(value, { stream: true });
+        }
+
+        // Try to find JSON in the response (IAedu might wrap it in markdown or text)
+        const jsonMatch = accumulated.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        throw new Error('No JSON found in IAedu response');
+      } catch (err) {
+        console.warn('IAedu Orchestration failed, falling back to default:', err);
+        // Fallback: Default to KB and Portuguese
+        return { intent: 'searchKB', args: {}, language: 'pt' };
+      }
     };
 
-    const shouldSkipContext = isToolRelatedQuery(input);
-    const relevantContext = shouldSkipContext ? "" : findRelevantContext(input, kbFiles);
+    const strategy = await orchestrateIntent(input);
+    console.log('Orchestration Strategy:', strategy);
 
+    // --- STEP 2: DATA GATHERING ---
+    let toolResult = "";
+    let relevantContext = "";
+    let usedToolName = "";
+
+    const executeTool = async (name: string, args: any) => {
+      if (name === "getLibraryOccupancy") {
+        const bib = args.biblioteca || "BibUA";
+        const url = `https://script.google.com/macros/s/AKfycbx5wRnGBHyq9JRYDXYPBlu2I1fSFDOb_zF7NVhqAQKuMnPMf4Oc6IXsW033LsdT0Kwo/exec?sheet=${bib}`;
+        try {
+          const response = await fetch(url);
+          return await response.text();
+        } catch (error: any) {
+          return `Error: ${error.message}`;
+        }
+      }
+
+      if (name === "searchOPAC") {
+        const { query, idx } = args;
+        const url = `/api/opac-search?q=${encodeURIComponent(query)}&idx=${idx || 'Kw'}`;
+        try {
+          const response = await fetch(url);
+          const data = await response.json();
+          return JSON.stringify(data);
+        } catch (error: any) {
+          return `Erro ao pesquisar no OPAC: ${error.message}`;
+        }
+      }
+
+      if (name === "searchScopus") {
+        const { query } = args;
+        const url = `/api/scopus-search?q=${encodeURIComponent(query)}`;
+        try {
+          const response = await fetch(url);
+          const data = await response.json();
+          return JSON.stringify(data);
+        } catch (error: any) {
+          return `Erro ao pesquisar no Scopus: ${error.message}`;
+        }
+      }
+
+      if (name === "getLibraryEvents") {
+        try {
+          const response = await fetch('/api/ua-events');
+          const data = await response.json();
+          return JSON.stringify(data);
+        } catch (error: any) {
+          return `Erro ao obter a agenda de eventos: ${error.message}`;
+        }
+      }
+
+      if (name === "getWeather") {
+        const bib = args.biblioteca || 'BibUA';
+        let latitude = '40.6405', longitude = '-8.6538';
+        if (bib === 'ESAN') { latitude = '40.8621'; longitude = '-8.4770'; }
+        else if (bib === 'ESTGA') { latitude = '40.5745'; longitude = '-8.4439'; }
+        
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`;
+        try {
+          const response = await fetch(url);
+          const data = await response.json();
+          return JSON.stringify(data);
+        } catch (error: any) {
+          return `Erro ao obter o tempo: ${error.message}`;
+        }
+      }
+      return "";
+    };
+
+    if (strategy.intent !== 'searchKB') {
+      usedToolName = strategy.intent;
+      toolResult = await executeTool(strategy.intent, strategy.args);
+    } else {
+      relevantContext = findRelevantContext(input, kbFiles);
+    }
+
+    // --- STEP 3: FINAL GENERATION VIA GEMINI ---
     const userHistoryText = messages
       .filter(m => m.role === 'user')
       .map(m => `- ${m.content}`)
       .join('\n');
 
-    const systemInstruction = `
+    const finalSystemInstruction = `
       ${baseSystemPrompt}
       
-      REGRAS ADICIONAIS DE FUNCIONAMENTO:
-      1. Para perguntas sobre a ocupação das bibliotecas da UA (quantas pessoas, se está cheio/vazio), use a ferramenta 'getLibraryOccupancy'.
-      2. Para pesquisar livros, autores ou assuntos no catálogo das bibliotecas da UA, use a ferramenta 'searchOPAC'.
-      3. Para pesquisar artigos científicos, revistas ou recursos eletrónicos, use a ferramenta 'searchScopus'.
-      4. Para listar exposições, workshops ou eventos culturais nas bibliotecas da UA, use a ferramenta 'getLibraryEvents'. Use esta ferramenta APENAS se a consulta incluir palavras como "exposição", "exhibition", "show", "workshop", "evento" ou "agenda".
-      5. Para obter informações sobre o estado do tempo nas localidades das bibliotecas (Aveiro, Águeda, Oliveira de Azeméis), use a ferramenta 'getWeather'.
-      6. CONTEXTO DE USO DO TEMPO: Você DEVE usar a ferramenta 'getWeather' sempre que o utilizador perguntar sobre a ocupação das bibliotecas, onde fica cada biblioteca, onde fica a UA, ou diretamente sobre o tempo.
-      7. CITAÇÃO DE FONTE: Sempre que usar informação de um ficheiro da base de conhecimento, você DEVE extrair a URL ou o link de ficheiro (ex: PDF) que indica de onde essa informação foi obtida originalmente. 
-      6. PROIBIÇÃO DE LINKS INTERNOS: Você NUNCA deve fornecer links diretos para os ficheiros .md ou .txt da base de conhecimento (ex: não use links como 'system_prompt.txt' ou '_FAQs_varias.md'). Use apenas as URLs externas ou links de PDFs encontrados DENTRO desses documentos.
-      7. FORMATO DE LINK: Escreva as fontes no final da sua resposta, precedidas por uma linha em branco e pelo texto "Fonte, onde saber mais:". Se houver apenas uma fonte, escreva: "Fonte, onde saber mais: [Nome da Fonte](URL)". Se houver múltiplas fontes únicas, liste-as numa lista não ordenada (bullet points) logo abaixo do texto "Fonte, onde saber mais:". Garanta que cada URL seja listada apenas uma vez e que seja clicável.
-      8. PDFS: Se a fonte for um ficheiro PDF, use o link de download fornecido no cabeçalho do ficheiro (ex: /kb-files/nome.pdf) e adicione " (PDF)" logo após o link. Exemplo: [Guia.pdf](/kb-files/Guia.pdf) (PDF).
+      IDIOMA DE RESPOSTA: Você DEVE responder obrigatoriamente no idioma: ${strategy.language.toUpperCase()}.
       
-      MAPEAMENTO DE BIBLIOTECAS para 'getLibraryOccupancy':
-      - BibUA: Biblioteca Central / Campus / UA.
-      - Mediateca: Mediateca.
-      - ISCA: ISCA, ISCA-UA ou Domingos Cravo.
-      - ESAN: ESAN ou Escola Superior Aveiro-Norte.
-      - ESTGA: ESTGA ou Escola Superior de Tecnologia e Gestão de Águeda.
-
-      REGRAS PARA 'searchOPAC':
-      - 'query': Termos de pesquisa extraídos da pergunta.
-      - 'idx': Campo de pesquisa. 
-        - "Kw" (Keyword): Valor padrão se não mencionar título, autor ou assunto, ou se parecer uma referência bibliográfica (ex: "R.A. Serway, Physics...").
-        - "ti" (Title): Se mencionar pesquisa por título.
-        - "au" (Author): Se mencionar Autor/es ou pesquisa por um nome.
-        - "su" (Subject): Se mencionar pesquisa por assunto ou "sobre" algo.
-      - 'lng': Idioma da pergunta (padrão "pt").
-      - TRADUÇÃO CRÍTICA: Se 'idx' for "su", você DEVE traduzir os termos de pesquisa para Português Europeu (pt-PT) antes de chamar a ferramenta.
-      - APRESENTAÇÃO DE RESULTADOS: Mostre no máximo 5 resultados. Para cada resultado, inclua o título, autor e ano, se disponíveis.
-      - LINK PARA LISTA COMPLETA: No final da resposta, forneça sempre o link para a lista completa no OPAC: https://opac.ua.pt/cgi-bin/koha/opac-search.pl?q=[query_escaped]&idx=[idx]&sort_by=relevance (substitua [query_escaped] pelos termos de pesquisa com espaços e caracteres especiais codificados para URL, e [idx] pelo valor usado).
-
-      REGRAS PARA 'searchScopus':
-      - 'query': Construa uma equação de pesquisa baseada na consulta do utilizador (ex: termos chave).
-      - APRESENTAÇÃO DE RESULTADOS: Mostre no máximo 5 resultados. Para cada resultado, inclua o título, autores, publicação, ano e link.
-      - LINK PARA LISTA COMPLETA: No final da resposta, forneça sempre o link para a lista completa no Scopus que será devolvido pela ferramenta.
+      REGRAS DE FORMATAÇÃO:
+      1. Se houver resultados de ferramentas (OPAC, Scopus, Ocupação, Eventos, Tempo), apresente-os de forma clara e organizada.
+      2. CITAÇÃO DE FONTE: Sempre que usar informação da base de conhecimento, extraia a URL ou link de PDF original.
+      3. PROIBIÇÃO DE LINKS INTERNOS: Nunca forneça links para ficheiros .md ou .txt. Use apenas URLs externas ou links de PDFs.
+      4. FORMATO DE FONTE: No final, adicione "Fonte, onde saber mais:" seguido dos links.
       
-      HISTÓRICO DE PERGUNTAS ANTERIORES DO UTILIZADOR (PARA CONTEXTO):
+      DADOS OBTIDOS:
+      ${usedToolName ? `RESULTADO DA FERRAMENTA (${usedToolName}):\n${toolResult}` : `CONTEXTO DA BASE DE CONHECIMENTO:\n${relevantContext || "Nenhum documento relevante encontrado."}`}
+      
+      HISTÓRICO:
       ${userHistoryText || "Nenhuma pergunta anterior."}
-      
-      BASE DE CONHECIMENTO (CONTEXTO RELEVANTE):
-      ${relevantContext || (shouldSkipContext ? "(Contexto de ficheiros omitido para focar nos dados da ferramenta em tempo real)" : "Nenhum documento relevante encontrado para esta consulta.")}
     `;
 
     try {
-      // Check if we should use Gemini directly (Frontend) or go through the proxy (IAEDU)
-      const useIAEDU = false; // Set to true if IAEDU is preferred
-      let apiName = useIAEDU ? "IAEDU (Server Proxy)" : "Gemini (Direct Frontend)";
-
-      if (!useIAEDU) {
-        // DIRECT GEMINI CALL (Frontend) - As per System Prompt
-        const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_GEMINI_API_KEY || (process as any).env.GEMINI_API_KEY });
-        
-        // Load fallback models from env or use default list
-        const envModels = (import.meta as any).env.VITE_GEMINI_MODELS;
-        const fallbackModels = envModels 
-          ? envModels.split(',').map((m: string) => m.trim())
-          : [
-              "gemini-3-flash-preview",
-              "gemini-2.5-flash",
-              "gemini-2.5-flash-lite-preview",
-              "gemini-3.1-flash-lite-preview"
-            ];
-        let currentModelIndex = 0;
-
-        const libraryOccupancyTool = {
-          name: "getLibraryOccupancy",
-          parameters: {
-            type: "OBJECT",
-            description: "Retrieves the last count of users in one of the UA Libraries. Use for queries about load, how many people, if it's busy or quiet. NOT for opening hours.",
-            properties: {
-              biblioteca: {
-                type: "STRING",
-                description: "The library identifier: BibUA (Main/Campus), Mediateca, ISCA, ESAN, or ESTGA.",
-                enum: ["BibUA", "Mediateca", "ISCA", "ESAN", "ESTGA"]
-              },
-            },
-            required: ["biblioteca"],
-          },
-        };
-
-        const searchOPACTool = {
-          name: "searchOPAC",
-          parameters: {
-            type: "OBJECT",
-            description: "Searches the UA Libraries OPAC (Online Public Access Catalog). Use for finding books, authors, or subjects in the library collection.",
-            properties: {
-              query: {
-                type: "STRING",
-                description: "The search terms extracted from the user query. If searching by subject (idx='su'), these terms must be in European Portuguese."
-              },
-              idx: {
-                type: "STRING",
-                description: "The search field: 'Kw' (keyword/default), 'ti' (title), 'au' (author), 'su' (subject/about).",
-                enum: ["Kw", "ti", "au", "su"]
-              },
-              lng: {
-                type: "STRING",
-                description: "The language of the user's original question (e.g., 'pt', 'en')."
-              }
-            },
-            required: ["query", "idx", "lng"],
-          },
-        };
-
-        const searchScopusTool = {
-          name: "searchScopus",
-          parameters: {
-            type: "OBJECT",
-            description: "Searches articles and electronic resources via the Scopus API. Use for queries about scientific articles, journals, or research papers.",
-            properties: {
-              query: {
-                type: "STRING",
-                description: "The search equation/keywords for Scopus search (e.g., 'artificial intelligence AND education')."
-              }
-            },
-            required: ["query"],
-          },
-        };
-
-        const libraryEventsTool = {
-          name: "getLibraryEvents",
-          parameters: {
-            type: "OBJECT",
-            description: "Lists active, ongoing exhibitions and cultural events in UA Libraries spaces (workshops, webinars, conferences, etc.).",
-            properties: {},
-          },
-        };
-
-        const weatherTool = {
-          name: "getWeather",
-          parameters: {
-            type: "OBJECT",
-            description: "Retrieves the current weather conditions in the locations of UA Libraries (Aveiro, Águeda, Oliveira de Azeméis).",
-            properties: {
-              biblioteca: {
-                type: "STRING",
-                description: "The library identifier to determine the location: BibUA (Aveiro), Mediateca (Aveiro), ISCA (Aveiro), ESAN (Oliveira de Azeméis), or ESTGA (Águeda). Defaults to BibUA.",
-                enum: ["BibUA", "Mediateca", "ISCA", "ESAN", "ESTGA"]
-              },
-            },
-            required: ["biblioteca"],
-          },
-        };
-
-        const executeTool = async (name: string, args: any) => {
-          if (name === "getLibraryOccupancy") {
-            const bib = args.biblioteca;
-            const url = `https://script.google.com/macros/s/AKfycbx5wRnGBHyq9JRYDXYPBlu2I1fSFDOb_zF7NVhqAQKuMnPMf4Oc6IXsW033LsdT0Kwo/exec?sheet=${bib}`;
-            let retryCount = 0;
-            while (true) {
-              try {
-                const response = await fetch(url);
-                if (response.status === 429) {
-                  retryCount++;
-                  if (retryCount >= 3) {
-                    return "De momento não é possível obter os dados de ocupação devido a excesso de tráfego. Por favor, tente mais tarde.";
-                  }
-                  console.warn(`Rate limit hit on tool (attempt ${retryCount}), retrying in 5s...`);
-                  await sleep(5000);
-                  continue;
-                }
-                return await response.text();
-              } catch (error: any) {
-                const errorMsg = error.message?.toLowerCase() || "";
-                if (errorMsg.includes("429")) {
-                  retryCount++;
-                  if (retryCount >= 3) {
-                    return "De momento não é possível obter os dados de ocupação devido a excesso de tráfego. Por favor, tente mais tarde.";
-                  }
-                  await sleep(5000);
-                  continue;
-                }
-                return `Error: ${error.message}`;
-              }
-            }
-          }
-
-          if (name === "searchOPAC") {
-            const { query, idx } = args;
-            const url = `/api/opac-search?q=${encodeURIComponent(query)}&idx=${idx}`;
-            try {
-              const response = await fetch(url);
-              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-              const data = await response.json();
-              return JSON.stringify(data);
-            } catch (error: any) {
-              console.error("Error fetching OPAC search:", error);
-              return `Erro ao pesquisar no OPAC: ${error.message}`;
-            }
-          }
-
-          if (name === "searchScopus") {
-            const { query } = args;
-            const url = `/api/scopus-search?q=${encodeURIComponent(query)}`;
-            try {
-              const response = await fetch(url);
-              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-              const data = await response.json();
-              return JSON.stringify(data);
-            } catch (error: any) {
-              console.error("Error fetching Scopus search:", error);
-              return `Erro ao pesquisar no Scopus: ${error.message}`;
-            }
-          }
-
-          if (name === "getLibraryEvents") {
-            try {
-              const response = await fetch('/api/ua-events');
-              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-              const data = await response.json();
-              return JSON.stringify(data);
-            } catch (error: any) {
-              console.error("Error fetching UA events:", error);
-              return `Erro ao obter a agenda de eventos: ${error.message}`;
-            }
-          }
-
-          if (name === "getWeather") {
-            const bib = args.biblioteca || 'BibUA';
-            let latitude, longitude;
-
-            switch (bib) {
-              case 'BibUA':
-              case 'Mediateca':
-              case 'ISCA':
-                latitude = '40.6405';
-                longitude = '-8.6538';
-                break;
-              case 'ESAN':
-                latitude = '40.8621';
-                longitude = '-8.4770';
-                break;
-              case 'ESTGA':
-                latitude = '40.5745';
-                longitude = '-8.4439';
-                break;
-              default:
-                latitude = '40.6405';
-                longitude = '-8.6538';
-                break;
-            }
-
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`;
-            try {
-              const response = await fetch(url);
-              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-              const data = await response.json();
-              return JSON.stringify(data);
-            } catch (error: any) {
-              console.error("Error fetching weather:", error);
-              return `Erro ao obter o tempo: ${error.message}`;
-            }
-          }
-
-          return "Unknown tool";
-        };
-
-        let currentContents = [
-          { role: 'user', parts: [{ text: input }] }
-        ];
-
-        let finalResponseText = "";
-        let currentSystemInstruction = systemInstruction;
-
-        while (true) {
-          let response;
-          const currentModel = fallbackModels[currentModelIndex];
-          try {
-            response = await ai.models.generateContent({
-              model: currentModel,
-              contents: currentContents as any,
-              config: {
-                systemInstruction: currentSystemInstruction,
-                temperature: 0.1,
-                tools: [{ functionDeclarations: [libraryOccupancyTool as any, searchOPACTool as any, searchScopusTool as any, libraryEventsTool as any, weatherTool as any] }],
-              }
-            });
-          } catch (error: any) {
-            // Check for rate limit (429) or similar transient errors
-            const errorMsg = error.message?.toLowerCase() || "";
-            if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("rate limit") || errorMsg.includes("too many requests")) {
-              // Try next model immediately if available
-              if (currentModelIndex < fallbackModels.length - 1) {
-                currentModelIndex++;
-                console.warn(`Rate limit hit on ${currentModel}. Switching immediately to fallback model: ${fallbackModels[currentModelIndex]}`);
-                continue;
-              }
-              finalResponseText = "De momento não é possível responder à questão devido a excesso de tráfego em todos os modelos disponíveis. Por favor, tente novamente mais tarde.";
-              break;
-            }
-            throw error; // Re-throw if it's not a rate limit error
-          }
-
-          const candidate = response.candidates[0];
-          const functionCalls = response.functionCalls;
-
-          if (functionCalls && functionCalls.length > 0) {
-            const toolResults = [];
-            for (const fc of functionCalls) {
-              const result = await executeTool(fc.name, fc.args);
-              toolResults.push({
-                functionResponse: {
-                  name: fc.name,
-                  response: { result }
-                }
-              });
-            }
-            
-            // Remove KB context for subsequent turns if a tool was used, as per user requirement
-            if (currentSystemInstruction.includes("BASE DE CONHECIMENTO (CONTEXTO RELEVANTE):")) {
-              currentSystemInstruction = currentSystemInstruction.split("BASE DE CONHECIMENTO (CONTEXTO RELEVANTE):")[0] + 
-                "\nBASE DE CONHECIMENTO:\n(Contexto de ficheiros removido após ativação de ferramenta)";
-            }
-
-            currentContents.push(candidate.content as any);
-            currentContents.push({ role: 'user', parts: toolResults } as any);
-            continue;
-          }
-
-          finalResponseText = response.text || "";
-          
-          // Log usage with tokens and cost
-          const usage = response.usageMetadata;
-          if (usage) {
-            const inputTokens = usage.promptTokenCount;
-            const outputTokens = usage.candidatesTokenCount;
-            // Gemini 1.5 Flash Pricing (approximate for Gemini 3 Flash Preview)
-            // Input: $0.075 / 1M tokens
-            // Output: $0.30 / 1M tokens
-            const cost = (inputTokens * 0.000000075) + (outputTokens * 0.0000003);
-            const costEstimate = cost.toFixed(6);
-
-            fetch('/api/log-usage', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                api: `${apiName} - ${currentModel}`, 
-                message: input,
-                inputTokens,
-                outputTokens,
-                costEstimate
-              })
-            }).catch(err => console.warn('Failed to log usage to server:', err));
-          }
-
-          break;
+      const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_GEMINI_API_KEY || (process as any).env.GEMINI_API_KEY });
+      const model = "gemini-3.1-flash-lite-preview"; // Fast and efficient for final generation
+      
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: [{ role: 'user', parts: [{ text: input }] }],
+        config: {
+          systemInstruction: finalSystemInstruction,
+          temperature: 0.7,
         }
+      });
 
-        setMessages(prev => prev.map(msg => 
-          msg.id === assistantMessageId 
-            ? { ...msg, content: finalResponseText }
-            : msg
-        ));
-
-      } else {
-        // PROXY CALL (IAEDU)
-        let response;
-        let retryCount = 0;
-        while (true) {
-          response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              message: input,
-              systemInstruction: systemInstruction,
-              history: []
-            }),
-          });
-
-          if (response.status === 429) {
-            retryCount++;
-            if (retryCount >= 3) {
-              setMessages(prev => prev.map(msg => 
-                msg.id === assistantMessageId 
-                  ? { ...msg, content: "De momento não é possível responder à questão devido a excesso de tráfego. Por favor, tente novamente mais tarde." }
-                  : msg
-              ));
-              setIsLoading(false);
-              return;
-            }
-            console.warn(`Rate limit hit on proxy (attempt ${retryCount}), retrying in 5s...`);
-            await sleep(5000);
-            continue;
-          }
-          break;
-        }
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Erro na resposta do servidor');
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error('ReadableStream não suportado pelo navegador');
-
-        // Log initial usage for proxy (tokens not available in stream yet)
+      const finalResponseText = response.text || "Desculpe, não consegui gerar uma resposta.";
+      
+      // Log usage
+      const usage = response.usageMetadata;
+      if (usage) {
         fetch('/api/log-usage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api: apiName, message: input })
-        }).catch(err => console.warn('Failed to log usage to server:', err));
-
-        const decoder = new TextDecoder();
-        let accumulatedContent = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          accumulatedContent += chunk;
-
-          setMessages(prev => prev.map(msg => 
-            msg.id === assistantMessageId 
-              ? { ...msg, content: accumulatedContent }
-              : msg
-          ));
-        }
+          body: JSON.stringify({ 
+            api: `IAedu Orchestrator + Gemini (${model})`, 
+            message: input,
+            inputTokens: usage.promptTokenCount,
+            outputTokens: usage.candidatesTokenCount,
+            costEstimate: ((usage.promptTokenCount * 0.000000075) + (usage.candidatesTokenCount * 0.0000003)).toFixed(6)
+          })
+        }).catch(() => {});
       }
+
+      setMessages(prev => prev.map(msg => 
+        msg.id === assistantMessageId 
+          ? { ...msg, content: finalResponseText }
+          : msg
+      ));
 
     } catch (err: any) {
       console.error('Chat Error:', err);
