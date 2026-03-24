@@ -294,11 +294,11 @@ export default function App() {
 
           Intents:
           - getLibraryOccupancy: Questions about how many people are in the library, if it's full, or busy.
-          - searchOPAC: Search for books, authors, or subjects in the library catalog.
+          - searchOPAC: Use ONLY when the user explicitly asks for books, works, authors, or titles (e.g., "livros sobre X", "obras de Y", "título Z"). Do NOT use for general questions about library services, rules, or schedules.
           - searchScopus: Search for scientific articles, research papers, or journals.
           - getLibraryEvents: Questions about exhibitions, workshops, or cultural events at the library.
           - getWeather: Questions about the weather in Aveiro, Águeda, or Oliveira de Azeméis.
-          - searchKB: General information about the library, schedules, rules, services, or any other topic not covered by tools.
+          - searchKB: Use for general information about the library, schedules, rules, services, or any other topic. This is the DEFAULT intent for most questions.
 
           Translation Rules:
           - searchOPAC: If the user's query is NOT in Portuguese, you MUST translate the terms to Portuguese. The "query" parameter MUST be the translated version in Portuguese.
