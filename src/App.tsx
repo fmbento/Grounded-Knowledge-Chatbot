@@ -328,7 +328,6 @@ export default function App() {
         const orchestrationPrompt = `
           You are the Orchestrator for SALInA, the Virtual Assistant of the University of Aveiro Libraries.
           Analyze the user query and return a JSON strategy.
-          The current interface language is ${language}.
 
           JSON structure:
           {
@@ -427,7 +426,6 @@ export default function App() {
       // 3. Final Generation
       const finalSystemPrompt = `
         Você é Salina, a Assistente Virtual das Bibliotecas da Universidade de Aveiro.
-        A interface atual está em ${language}. Por favor, responda preferencialmente nesta língua, a menos que o utilizador peça explicitamente outra.
         
         ${baseSystemPrompt}
         
@@ -527,19 +525,19 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-[#f5f5f5] font-sans text-[#1a1a1a] overflow-hidden">
+    <div className="flex h-screen bg-[#f5f5f5] dark:bg-gray-950 font-sans text-[#1a1a1a] dark:text-gray-100 overflow-hidden transition-colors">
       {/* Sidebar / Knowledge Base Panel */}
       <motion.aside 
         initial={false}
         animate={{ width: isKbOpen ? 320 : 0, opacity: isKbOpen ? 1 : 0 }}
-        className="bg-white border-r border-black/5 flex flex-col shadow-xl z-20 overflow-hidden"
+        className="bg-white dark:bg-gray-800 border-r border-black/5 dark:border-white/10 flex flex-col shadow-xl z-20 overflow-hidden transition-colors"
       >
-        <div className="p-6 border-b border-black/5 flex justify-between items-center bg-white sticky top-0">
+        <div className="p-6 border-b border-black/5 dark:border-white/10 flex justify-between items-center bg-white dark:bg-gray-800 sticky top-0 transition-colors">
           <div className="flex items-center gap-2">
-            <FileText className="text-emerald-600" size={20} />
-            <h2 className="font-semibold text-sm uppercase tracking-wider">Base de Conhecimento</h2>
+            <FileText className="text-emerald-600 dark:text-emerald-400" size={20} />
+            <h2 className="font-semibold text-sm uppercase tracking-wider dark:text-gray-200">Base de Conhecimento</h2>
           </div>
-          <button onClick={() => setIsKbOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+          <button onClick={() => setIsKbOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400 transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -547,15 +545,15 @@ export default function App() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <div className="space-y-2">
             {kbFiles.length === 0 && (
-              <p className="text-[11px] text-gray-400 text-center py-8 italic">
+              <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center py-8 italic">
                 Nenhum documento encontrado na pasta /KB.
               </p>
             )}
             {kbFiles.map((file, idx) => (
-              <div key={idx} className="group flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-black/5 hover:border-emerald-200 transition-all">
+              <div key={idx} className="group flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-black/5 dark:border-white/5 hover:border-emerald-200 dark:hover:border-emerald-800 transition-all">
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <FileText size={14} className="text-gray-400 shrink-0" />
-                  <span className="text-xs truncate font-medium">{file.name}</span>
+                  <FileText size={14} className="text-gray-400 dark:text-gray-500 shrink-0" />
+                  <span className="text-xs truncate font-medium dark:text-gray-300">{file.name}</span>
                 </div>
               </div>
             ))}
