@@ -436,6 +436,7 @@ export default function App() {
         2. NUNCA forneça links diretos para ficheiros .md ou .txt.
         3. Se a fonte for PDF, use o formato: [Nome](Link) (PDF).
         4. No final da resposta, se houver fontes, use obrigatoriamente o cabeçalho "Fonte, onde saber mais:".
+        5. Se o contexto contiver referências a imagens (URLs), inclua-as na resposta usando Markdown \`![descrição](url)\` sempre que for apropriado e enriquecer a resposta.
         
         MAPEAMENTO DE BIBLIOTECAS:
         - BibUA: Biblioteca Central / Campus de Santiago.
@@ -710,6 +711,13 @@ export default function App() {
                                   target="_blank" 
                                   rel="noopener noreferrer" 
                                   className="text-blue-600 dark:text-blue-400 hover:underline font-medium transition-colors"
+                                />
+                              ),
+                              img: ({ node, ...props }) => (
+                                <img 
+                                  {...props} 
+                                  className="rounded-xl shadow-md border border-black/5 dark:border-white/10 max-h-[400px] object-contain my-4"
+                                  referrerPolicy="no-referrer"
                                 />
                               )
                             }}
