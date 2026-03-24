@@ -119,7 +119,7 @@ export default function App() {
     const lowerInput = input.toLowerCase();
     
     // Occupancy keywords
-    if (lowerInput.includes("ocupação") || lowerInput.includes("lotado") || lowerInput.includes("cheia") || lowerInput.includes("vazia") || lowerInput.includes("pessoas") || lowerInput.includes("lugar") || lowerInput.includes("estudantes") || lowerInput.includes("occupancy") || lowerInput.includes("full") || lowerInput.includes("busy") || lowerInput.includes("crowded") || lowerInput.includes("people")) {
+    if (lowerInput.includes("ocupação") || lowerInput.includes("lotado") || lowerInput.includes("cheia") || lowerInput.includes("vazia") || lowerInput.includes("pessoas") || lowerInput.includes("lugar") || lowerInput.includes("estudantes") || lowerInput.includes("como está") || lowerInput.includes("how is") || lowerInput.includes("occupancy") || lowerInput.includes("full") || lowerInput.includes("busy") || lowerInput.includes("crowded") || lowerInput.includes("people")) {
       let biblioteca = "BibUA";
       if (lowerInput.includes("mediateca")) biblioteca = "Mediateca";
       else if (lowerInput.includes("isca")) biblioteca = "ISCA";
@@ -129,8 +129,8 @@ export default function App() {
       return { intent: "getLibraryOccupancy", language: "PT", parameters: { biblioteca } };
     }
     
-    // Weather keywords
-    if (lowerInput.includes("tempo") || lowerInput.includes("clima") || lowerInput.includes("chuva") || lowerInput.includes("sol") || lowerInput.includes("temperatura") || lowerInput.includes("meteo") || lowerInput.includes("weather") || lowerInput.includes("rain") || lowerInput.includes("sun") || lowerInput.includes("temperature")) {
+    // Weather and Location keywords
+    if (lowerInput.includes("tempo") || lowerInput.includes("clima") || lowerInput.includes("chuva") || lowerInput.includes("sol") || lowerInput.includes("temperatura") || lowerInput.includes("meteo") || lowerInput.includes("weather") || lowerInput.includes("rain") || lowerInput.includes("sun") || lowerInput.includes("temperature") || lowerInput.includes("onde") || lowerInput.includes("where") || lowerInput.includes("situe") || lowerInput.includes("localização") || lowerInput.includes("morada") || lowerInput.includes("address")) {
       let biblioteca = "BibUA";
       if (lowerInput.includes("águeda") || lowerInput.includes("estga")) biblioteca = "ESTGA";
       else if (lowerInput.includes("oliveira") || lowerInput.includes("esan")) biblioteca = "ESAN";
@@ -294,11 +294,11 @@ export default function App() {
 
           Intents:
           - getLibraryOccupancy: Questions about how many people are in the library, if it's full, or busy.
-          - searchOPAC: Use ONLY when the user explicitly asks for books, works, authors, or titles (e.g., "livros sobre X", "obras de Y", "título Z"). Do NOT use for general questions about library services, rules, or schedules.
+          - searchOPAC: Use ONLY when the user explicitly asks for books, works, authors, or titles (e.g., "livros sobre X", "obras de Y", "título Z"). Do NOT use for general questions about library services, rules, schedules, or research support (DMP, Open Access).
           - searchScopus: Search for scientific articles, research papers, or journals.
           - getLibraryEvents: Questions about exhibitions, workshops, or cultural events at the library.
-          - getWeather: Questions about the weather in Aveiro, Águeda, or Oliveira de Azeméis.
-          - searchKB: Use for general information about the library, schedules, rules, services, or any other topic. This is the DEFAULT intent for most questions.
+          - getWeather: Questions about the weather in Aveiro, Águeda, or Oliveira de Azeméis. ALSO use for questions about the LOCATION or ADDRESS of the university or libraries (e.g., "onde fica", "where is", "situe l'UA").
+          - searchKB: Use for general information about the library, schedules, rules, services, research support (DMP), or any other topic. This is the DEFAULT intent for most questions.
 
           Translation Rules:
           - searchOPAC: If the user's query is NOT in Portuguese, you MUST translate the terms to Portuguese. The "query" parameter MUST be the translated version in Portuguese.
@@ -360,8 +360,16 @@ export default function App() {
         context = findRelevantContext(parameters.query || input, kbFiles);
       } else {
         context = await executeTool(intent, parameters);
+        
+        // If occupancy is requested, also fetch weather as per user request
+        if (intent === "getLibraryOccupancy") {
+          const weatherContext = await executeTool("getWeather", parameters);
+          context += "\n\nESTADO DO TEMPO ATUAL NA LOCALIZAÇÃO DA BIBLIOTECA:\n" + weatherContext;
+        }
+
         // Smart RAG: Conditionally skip KB context retrieval for tool-related queries to save tokens
-        if (!isToolRelatedQuery(intent)) {
+        // However, always include KB for weather/location/occupancy queries as they often need both
+        if (!isToolRelatedQuery(intent) || intent === "getWeather" || intent === "getLibraryOccupancy") {
           context += "\n\n" + findRelevantContext(parameters.query || input, kbFiles);
         }
       }
@@ -392,6 +400,9 @@ export default function App() {
 
         REGRAS PARA SCOPUS:
         - Mostre no máximo 5 resultados (título, autores, publicação, ano, link).
+
+        CONVITE OBRIGATÓRIO:
+        - Convide SEMPRE os utilizadores a virem visitar as bibliotecas (ex: "Venha visitar-nos!", "Esperamos por si!", "Aproveite para passar por cá!").
 
         CONTEXTO RECUPERADO:
         ${context || "Nenhum contexto específico encontrado na Base de Conhecimento para esta pergunta. Por favor, responda com base no seu conhecimento geral sobre as Bibliotecas da Universidade de Aveiro, se possível."}
@@ -566,12 +577,13 @@ export default function App() {
                 <div className="space-y-2">
                   <h2 className="text-3xl font-light text-gray-800">Como posso ajudar?</h2>
                   <p className="text-gray-500 max-w-2xl mx-auto text-sm">
-                    Pesquise no catálogo das Bibliotecas UA, artigos na Scopus, a vasta base de conhecimento dos Serviços de Referência e Formação dos SBIDM, consulte a ocupação das bibliotecas, a agenda cultural, e muito mais...
+                    Pesquise no catálogo das Bibliotecas UA, na Scopus, a vasta base de conhecimento dos Serviços de Referência e Formação dos SBIDM, veja a ocupação das bibliotecas, a agenda cultural, e muito mais...
                   </p>
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full px-4">
                   {[
+                    { label: "ocupação", query: "Como está a BibUA?", icon: Clock },
                     { label: "livros nas bibliotecas", query: "Obras sobre acidificação oceânica, pf.", icon: Book },
                     { label: "artigos na Scopus", query: "artigos sobre aquecimento global", icon: FileText },
                     { label: "empréstimo", query: "A minha tia pode devolver os meus empréstimos?", icon: Clock },
