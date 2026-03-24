@@ -294,7 +294,7 @@ export default function App() {
 
           Intents:
           - getLibraryOccupancy: Questions about how many people are in the library, if it's full, or busy.
-          - searchOPAC: Use ONLY when the user explicitly asks for books, works, authors, or titles (e.g., "livros sobre X", "obras de Y", "título Z"). Do NOT use for general questions about library services, rules, schedules, or research support (DMP, Open Access).
+          - searchOPAC: Use ONLY when the user explicitly asks for books, works, authors, or titles (e.g., "livros sobre X", "obras de Y", "título Z"). Do NOT use for general questions about library services, rules, schedules, research support (DMP, Open Access), Curricular Units (UCs), Departments, or general UA information.
           - searchScopus: Search for scientific articles, research papers, or journals.
           - getLibraryEvents: Questions about exhibitions, workshops, or cultural events at the library.
           - getWeather: Questions about the weather in Aveiro, Águeda, or Oliveira de Azeméis. ALSO use for questions about the LOCATION or ADDRESS of the university or libraries (e.g., "onde fica", "where is", "situe l'UA").
@@ -397,6 +397,7 @@ export default function App() {
         REGRAS PARA OPAC:
         - Mostre no máximo 5 resultados (título, autor, ano).
         - Forneça sempre o link para a lista completa no OPAC: https://opac.ua.pt/cgi-bin/koha/opac-search.pl?q=${encodeURIComponent(parameters.query || input)}&idx=${parameters.idx || 'Kw'}
+        - HARD RULE: NUNCA mencione ou forneça o link do OPAC para informações sobre Unidades Curriculares (UCs), Departamentos ou informações gerais sobre a UA. O OPAC serve APENAS para pesquisa de livros e obras.
 
         REGRAS PARA SCOPUS:
         - Mostre no máximo 5 resultados (título, autores, publicação, ano, link).
@@ -583,9 +584,10 @@ export default function App() {
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full px-4">
                   {[
-                    { label: "ocupação", query: "Como está a BibUA?", icon: Clock },
+                    { label: "ocupação", query: "Como está a Biblioteca do Campus?", icon: Clock },
                     { label: "livros nas bibliotecas", query: "Obras sobre acidificação oceânica, pf.", icon: Book },
                     { label: "artigos na Scopus", query: "artigos sobre aquecimento global", icon: FileText },
+                    { label: "bibliografia recomendada", query: 'Qual é a Bibliografia Recomendada da Unidade Curricular "Cálculo II"?', icon: Book },
                     { label: "empréstimo", query: "A minha tia pode devolver os meus empréstimos?", icon: Clock },
                     { label: "exposições", query: "Exposições, que temos?", icon: Image },
                     { label: "write a DMP", query: "Help me write a DMP", icon: Database },
