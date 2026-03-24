@@ -584,7 +584,7 @@ export default function App() {
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full px-4">
                   {[
-                    { label: "ocupação", query: "Como está a Biblioteca do Campus? Ocupação, estado do tempo?", icon: Clock },
+                    { label: "ocupação", query: "Biblioteca do Campus: qual é a ocupação atual e o estado do tempo?", icon: Clock },
                     { label: "livros nas bibliotecas", query: "Obras sobre acidificação oceânica, pf.", icon: Book },
                     { label: "artigos na Scopus", query: "artigos sobre aquecimento global", icon: FileText },
                     { label: "bibliografia recomendada", query: 'Qual é a Bibliografia Recomendada da Unidade Curricular "Cálculo II"?', icon: Book },
