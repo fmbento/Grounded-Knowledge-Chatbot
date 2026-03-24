@@ -51,18 +51,24 @@ async function startServer() {
     const { q } = req.query;
     if (!q) return res.status(400).json({ error: 'Query parameter "q" is required' });
 
+    let scopusQuery = q as string;
+    // If the query doesn't already have field specifiers, wrap it in TITLE-ABS-KEY
+    if (!scopusQuery.includes('TITLE-ABS-KEY(') && !scopusQuery.includes('TITLE(') && !scopusQuery.includes('ABS(') && !scopusQuery.includes('KEY(')) {
+      scopusQuery = `TITLE-ABS-KEY(${scopusQuery})`;
+    }
+
     const apiKey = process.env.SCOPUS_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'Scopus API key not configured on server' });
     }
 
     const baseApiUrl = "https://api.elsevier.com/content/search/scopus";
-    const encodedQuery = encodeURIComponent(q as string);
-    const apiParams = `query=TITLE-ABS-KEY(${encodedQuery})&sort=-relevancy&apiKey=${apiKey}&count=5&start=0`;
+    const encodedQuery = encodeURIComponent(scopusQuery);
+    const apiParams = `query=${encodedQuery}&sort=-relevancy&apiKey=${apiKey}&count=5&start=0`;
     const apiUrl = `${baseApiUrl}?${apiParams}`;
 
-    // Full results page URL
-    const fullResultsUrl = `https://www.scopus.com/results/results.uri?sort=rel-f&src=s&st1=${encodedQuery}&sid=&sot=b&sdt=b&sl=16&s=TITLE-ABS-KEY%28${encodedQuery}%29%23`;
+    // Full results page URL - Scopus UI handles the full query in the 's' parameter
+    const fullResultsUrl = `https://www.scopus.com/results/results.uri?sort=rel-f&src=s&sid=&sot=b&sdt=b&sl=16&s=${encodedQuery}%23`;
 
     try {
       const response = await fetch(apiUrl, {
