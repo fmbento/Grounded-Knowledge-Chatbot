@@ -5,6 +5,9 @@
 **Grounded-Knowledge-Chatbot** is an intelligent, **100% Open Source** conversational AI system powered by **Google's Gemini API** with intelligent fallback model switching. It provides reliable, knowledge-base-grounded responses by integrating with multiple academic and research APIs for real-time data retrieval.
 
 The system features:
+- 🖼️ **Image Support** in responses with polished Markdown rendering
+- 🔄 **Smart Retry Logic** for empty or "not found" responses
+- 📧 **Direct Support Fallback** to Reference Service email
 - 🧠 **Google Gemini Integration** with multiple model fallbacks (Gemini 3 Flash, 2.5 Flash, etc.)
 - 📚 Multi-source knowledge base support (PDF, Markdown, Text files)
 - 🌓 **Dark Mode** support with manual toggle
@@ -380,6 +383,12 @@ For support, please:
 
 ## 🔄 Changelog
 
+### Version 0.1.3
+- 🖼️ **Image Support**: The assistant now includes images in responses when referenced in the context, with polished Markdown rendering (rounded corners, shadows).
+- 🔄 **Smart Retry Logic**: Implemented a 2-attempt retry mechanism for empty or "not found" responses to ensure higher reliability.
+- 📧 **Support Fallback**: Added a final fallback to the UA Libraries Reference Service email (`sbidm-referencia@ua.pt`) when information cannot be found.
+- 🎯 **Shortcut Refinement**: Updated English shortcuts for better clarity (e.g., "Books in UA libraries").
+
 ### Version 0.1.2
 - 🌓 **Dark Mode**: Implemented full dark mode support with a manual toggle in the header.
 - 🌐 **Multilingual UI**: Added a language switcher (PT/EN) with full translation of UI elements.
@@ -490,4 +499,4 @@ These rules help ensure that searches in specialized databases (like the UA libr
 
 ---
 
-**Last Updated:** March 24, 2026 (v0.1.2)
+**Last Updated:** March 24, 2026 (v0.1.3)

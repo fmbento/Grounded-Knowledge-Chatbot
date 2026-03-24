@@ -462,48 +462,69 @@ export default function App() {
 
       let finalResponseText = "";
       let finalModelUsed = GEMINI_MODELS[0];
+      let attempts = 0;
+      const maxAttempts = 2;
 
-      for (const modelName of GEMINI_MODELS) {
-        try {
-          const finalResponse = await ai.models.generateContent({
-            model: modelName,
-            contents: [
-              ...messages.map(m => ({
-                role: m.role === 'user' ? 'user' : 'model',
-                parts: [{ text: m.content }]
-              })),
-              { role: 'user', parts: [{ text: input }] }
-            ],
-            config: {
-              systemInstruction: finalSystemPrompt,
-              temperature: 0.7,
+      while (attempts < maxAttempts) {
+        attempts++;
+        for (const modelName of GEMINI_MODELS) {
+          try {
+            const finalResponse = await ai.models.generateContent({
+              model: modelName,
+              contents: [
+                ...messages.map(m => ({
+                  role: m.role === 'user' ? 'user' : 'model',
+                  parts: [{ text: m.content }]
+                })),
+                { role: 'user', parts: [{ text: input }] }
+              ],
+              config: {
+                systemInstruction: finalSystemPrompt,
+                temperature: 0.7,
+              }
+            });
+            const text = finalResponse.text;
+            finalResponseText = (text && text.trim().length > 0) ? text : "";
+            finalModelUsed = modelName;
+
+            // Log usage
+            const usage = finalResponse.usageMetadata;
+            if (usage) {
+              fetch('/api/log-usage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  api: `SALInA Final Gen - ${modelName} (Attempt ${attempts})`, 
+                  message: input,
+                  inputTokens: usage.promptTokenCount,
+                  outputTokens: usage.candidatesTokenCount
+                })
+              }).catch(err => console.warn('Failed to log usage:', err));
             }
-          });
-          const text = finalResponse.text;
-          finalResponseText = (text && text.trim().length > 0) ? text : "Desculpe, não consegui obter uma resposta útil para a sua pergunta. Por favor, tente reformular ou pergunte sobre outro tópico.";
-          finalModelUsed = modelName;
+            break;
+          } catch (err: any) {
+            if (err.message?.includes("429") || err.message?.includes("503")) {
+              console.warn(`Model ${modelName} failed (${err.message}) during final generation, trying next...`);
+              continue;
+            }
+            throw err;
+          }
+        }
 
-          // Log usage
-          const usage = finalResponse.usageMetadata;
-          if (usage) {
-            fetch('/api/log-usage', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                api: `SALInA Final Gen - ${modelName}`, 
-                message: input,
-                inputTokens: usage.promptTokenCount,
-                outputTokens: usage.candidatesTokenCount
-              })
-            }).catch(err => console.warn('Failed to log usage:', err));
-          }
-          break;
-        } catch (err: any) {
-          if (err.message?.includes("429") || err.message?.includes("503")) {
-            console.warn(`Model ${modelName} failed (${err.message}) during final generation, trying next...`);
-            continue;
-          }
-          throw err;
+        // Check if response is empty or "not found"
+        const isNotFound = !finalResponseText || 
+                          finalResponseText.toLowerCase().includes("não consegui encontrar") || 
+                          finalResponseText.toLowerCase().includes("não encontrei") ||
+                          finalResponseText.toLowerCase().includes("desculpe, mas não consegui") ||
+                          finalResponseText.toLowerCase().includes("não foi possível encontrar");
+
+        if (!isNotFound) {
+          break; // Success!
+        } else if (attempts < maxAttempts) {
+          console.warn(`Attempt ${attempts} failed to find info, retrying...`);
+        } else {
+          // Final failure after maxAttempts
+          finalResponseText = "Desculpe, mas não consegui encontrar a informação relevante para responder à sua pergunta após várias tentativas. Por favor, envie a sua questão para o Serviço de Referência através do email: sbidm-referencia@ua.pt. Estamos aqui para ajudar!";
         }
       }
 
