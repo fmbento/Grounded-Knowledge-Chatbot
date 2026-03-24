@@ -7,6 +7,8 @@
 The system features:
 - 🧠 **Google Gemini Integration** with multiple model fallbacks (Gemini 3 Flash, 2.5 Flash, etc.)
 - 📚 Multi-source knowledge base support (PDF, Markdown, Text files)
+- 🌓 **Dark Mode** support with manual toggle
+- 🌐 **Multilingual UI** (Portuguese/English) with real-time switching
 - 🔗 Integration with academic search APIs (OPAC, Scopus)
 - 🎓 Real-time university events aggregation
 - 🌦️ Weather API integration
@@ -378,6 +380,13 @@ For support, please:
 
 ## 🔄 Changelog
 
+### Version 0.1.2
+- 🌓 **Dark Mode**: Implemented full dark mode support with a manual toggle in the header.
+- 🌐 **Multilingual UI**: Added a language switcher (PT/EN) with full translation of UI elements.
+- 🎨 **UI Refinement**: Redesigned the header to include theme and language toggles while maintaining a clean, professional look.
+- 🛠️ **Bug Fixes**: Resolved CSS variant issues for dark mode and fixed variable shadowing in the orchestration logic.
+- 🔄 **Language Logic**: Refined the assistant's response logic to prioritize the user's detected query language while supporting a multilingual interface.
+
 ### Version 0.1.1
 - 🎨 **UI Enhancements**: Added alusive icons to question shortcuts
 - 📏 **Layout Optimization**: Improved text flow for welcome messages to prevent awkward line breaks
@@ -481,4 +490,4 @@ These rules help ensure that searches in specialized databases (like the UA libr
 
 ---
 
-**Last Updated:** March 24, 2026
+**Last Updated:** March 24, 2026 (v0.1.2)
