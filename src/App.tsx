@@ -46,6 +46,7 @@ export default function App() {
         const response = await fetch('/api/kb');
         if (response.ok) {
           const data = await response.json();
+          console.log(`Loaded ${data.length} KB files`);
           setKbFiles(data);
         }
       } catch (err) {
@@ -62,7 +63,7 @@ export default function App() {
   const totalKbSize = kbFiles.reduce((acc, file) => acc + file.size, 0);
 
   // Smart RAG: Find relevant documents to stay within API token limits
-  const findRelevantContext = (query: string, files: KBFile[], maxChars: number = 1800000) => {
+  const findRelevantContext = (query: string, files: KBFile[], maxChars: number = 1200000) => {
     if (files.length === 0) return "";
     
     const keywords = query.toLowerCase().split(/\W+/).filter(w => w.length > 3);
@@ -87,6 +88,7 @@ export default function App() {
         
         return { ...file, score };
       })
+      .filter(f => f.score > 0 || keywords.length === 0) // Only include files with some relevance if keywords exist
       .sort((a, b) => b.score - a.score);
 
     let currentSize = 0;
@@ -96,6 +98,13 @@ export default function App() {
       if (currentSize + file.content.length > maxChars) break;
       selectedFiles.push(file);
       currentSize += file.content.length;
+    }
+
+    if (selectedFiles.length === 0 && files.length > 0) {
+      // Fallback: if no matches but we have files, include the first few files to avoid empty context
+      return files.slice(0, 3)
+        .map(f => `--- FILE: ${f.name} (Type: ${f.type}, Download: ${f.downloadUrl}) ---\n${f.content.substring(0, 5000)}`)
+        .join('\n\n');
     }
 
     return selectedFiles
@@ -250,7 +259,8 @@ export default function App() {
       return ["getLibraryOccupancy", "searchOPAC", "searchScopus", "getLibraryEvents", "getWeather"].includes(intent);
     };
 
-    const GEMINI_MODELS = (import.meta as any).env.VITE_GEMINI_MODELS?.split(',') || ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash-preview-12-2025"];
+    const envGeminiModels = (import.meta as any).env.VITE_GEMINI_MODELS;
+    const GEMINI_MODELS = envGeminiModels ? envGeminiModels.split(',').map((m: string) => m.trim()) : ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash-preview-12-2025"];
     const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (process as any).env.GEMINI_API_KEY;
     const ai = new GoogleGenAI({ apiKey });
 
@@ -355,6 +365,7 @@ export default function App() {
           context += "\n\n" + findRelevantContext(parameters.query || input, kbFiles);
         }
       }
+      console.log(`Context found: ${context.length} chars`);
 
       // 3. Final Generation
       const finalSystemPrompt = `
@@ -383,7 +394,7 @@ export default function App() {
         - Mostre no máximo 5 resultados (título, autores, publicação, ano, link).
 
         CONTEXTO RECUPERADO:
-        ${context || "Nenhum contexto adicional encontrado."}
+        ${context || "Nenhum contexto específico encontrado na Base de Conhecimento para esta pergunta. Por favor, responda com base no seu conhecimento geral sobre as Bibliotecas da Universidade de Aveiro, se possível."}
       `;
 
       let finalResponseText = "";
@@ -393,13 +404,20 @@ export default function App() {
         try {
           const finalResponse = await ai.models.generateContent({
             model: modelName,
-            contents: [{ role: 'user', parts: [{ text: input }] }],
+            contents: [
+              ...messages.map(m => ({
+                role: m.role === 'user' ? 'user' : 'model',
+                parts: [{ text: m.content }]
+              })),
+              { role: 'user', parts: [{ text: input }] }
+            ],
             config: {
               systemInstruction: finalSystemPrompt,
               temperature: 0.7,
             }
           });
-          finalResponseText = finalResponse.text || "Desculpe, não consegui gerar uma resposta.";
+          const text = finalResponse.text;
+          finalResponseText = (text && text.trim().length > 0) ? text : "Desculpe, não consegui obter uma resposta útil para a sua pergunta. Por favor, tente reformular ou pergunte sobre outro tópico.";
           finalModelUsed = modelName;
 
           // Log usage
