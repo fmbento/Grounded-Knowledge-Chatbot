@@ -64,7 +64,7 @@ export default function App() {
       clearChat: "Clear chat",
       shortcuts: [
         { label: "occupancy", query: "Campus Library: what is the current occupancy and weather?", icon: Clock },
-        { label: "books in libraries", query: "Works on ocean acidification, please.", icon: Book },
+        { label: "Books in UA libraries", query: "Works about ocean acidification, please.", icon: Book },
         { label: "articles in Scopus", query: "articles on global warming", icon: FileText },
         { label: "recommended bibliography", query: 'What is the Recommended Bibliography for the "Calculus II" course?', icon: Book },
         { label: "loan", query: "Can my aunt return my loans?", icon: Clock },
