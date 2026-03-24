@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info, Book, Clock, Image, Database, Globe } from 'lucide-react';
+import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info, Book, Clock, Image, Database, Globe, Moon, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -27,8 +27,56 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [kbFiles, setKbFiles] = useState<KBFile[]>([]);
   const [isKbOpen, setIsKbOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [language, setLanguage] = useState<'PT' | 'EN'>('PT');
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  const translations = {
+    PT: {
+      welcome: "Como posso ajudar?",
+      description: "Pesquise no catálogo das Bibliotecas UA, na Scopus, a vasta base de conhecimento dos Serviços de Referência e Formação dos SBIDM, veja a ocupação das bibliotecas, a agenda cultural, e muito mais...",
+      placeholder: "Pergunte sobre documentos ou ocupação...",
+      consulting: "Consultando...",
+      clearChat: "Limpar conversa",
+      shortcuts: [
+        { label: "ocupação", query: "Biblioteca do Campus: qual é a ocupação atual e o estado do tempo?", icon: Clock },
+        { label: "livros nas bibliotecas", query: "Obras sobre acidificação oceânica, pf.", icon: Book },
+        { label: "artigos na Scopus", query: "artigos sobre aquecimento global", icon: FileText },
+        { label: "bibliografia recomendada", query: 'Qual é a Bibliografia Recomendada da Unidade Curricular "Cálculo II"?', icon: Book },
+        { label: "empréstimo", query: "A minha tia pode devolver os meus empréstimos?", icon: Clock },
+        { label: "exposições", query: "Exposições, que temos?", icon: Image },
+        { label: "write a DMP", query: "Help me write a DMP", icon: Database },
+        { label: "(...)", query: "Où se situe l'UA?", icon: Globe },
+      ]
+    },
+    EN: {
+      welcome: "How can I help?",
+      description: "Search the UA Libraries catalog, Scopus, the vast knowledge base of the SBIDM Reference and Training Services, check library occupancy, the cultural agenda, and much more...",
+      placeholder: "Ask about documents or occupancy...",
+      consulting: "Consulting...",
+      clearChat: "Clear chat",
+      shortcuts: [
+        { label: "occupancy", query: "Campus Library: what is the current occupancy and weather?", icon: Clock },
+        { label: "books in libraries", query: "Works on ocean acidification, please.", icon: Book },
+        { label: "articles in Scopus", query: "articles on global warming", icon: FileText },
+        { label: "recommended bibliography", query: 'What is the Recommended Bibliography for the "Calculus II" course?', icon: Book },
+        { label: "loan", query: "Can my aunt return my loans?", icon: Clock },
+        { label: "exhibitions", query: "Exhibitions, what do we have?", icon: Image },
+        { label: "write a DMP", query: "Help me write a DMP", icon: Database },
+        { label: "(...)", query: "Où se situe l'UA?", icon: Globe },
+      ]
+    }
+  };
+
+  const t = translations[language];
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const kbInputRef = useRef<HTMLInputElement>(null);
 
@@ -280,6 +328,7 @@ export default function App() {
         const orchestrationPrompt = `
           You are the Orchestrator for SALInA, the Virtual Assistant of the University of Aveiro Libraries.
           Analyze the user query and return a JSON strategy.
+          The current interface language is ${language}.
 
           JSON structure:
           {
@@ -352,7 +401,7 @@ export default function App() {
         orchestrationModelUsed = "RAG Fallback";
       }
 
-      const { intent, language = 'PT', parameters = {} } = strategy;
+      const { intent, language: detectedLanguage = 'PT', parameters = {} } = strategy;
 
       // 2. Action Execution
       let context = "";
@@ -377,9 +426,12 @@ export default function App() {
 
       // 3. Final Generation
       const finalSystemPrompt = `
+        Você é Salina, a Assistente Virtual das Bibliotecas da Universidade de Aveiro.
+        A interface atual está em ${language}. Por favor, responda preferencialmente nesta língua, a menos que o utilizador peça explicitamente outra.
+        
         ${baseSystemPrompt}
         
-        STRICT INSTRUCTION: Respond in the detected language: ${language.toUpperCase()}.
+        STRICT INSTRUCTION: Respond in the detected language: ${detectedLanguage.toUpperCase()}.
         
         REGRAS DE FORMATAÇÃO E CITAÇÃO:
         1. Se usar informação da Base de Conhecimento, cite a URL ou link de PDF.
@@ -512,18 +564,18 @@ export default function App() {
       </motion.aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col relative">
+      <div className="flex-1 flex flex-col relative bg-white dark:bg-gray-900 transition-colors">
         {/* Header */}
-        <header className="bg-white border-b border-black/5 px-6 py-4 flex justify-between items-center shadow-sm z-10">
+        <header className="bg-white dark:bg-gray-800 border-b border-black/5 dark:border-white/10 px-6 py-4 flex justify-between items-center shadow-sm z-10 transition-colors">
           <div className="flex items-center gap-3">
             {!isKbOpen && (
               <button 
                 onClick={() => setIsKbOpen(true)}
-                className="p-2 hover:bg-gray-100 rounded-xl text-gray-500 transition-all relative"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl text-gray-500 dark:text-gray-400 transition-all relative"
               >
                 <FileText size={20} />
                 {kbFiles.length > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full border-2 border-white"></span>
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full border-2 border-white dark:border-gray-800"></span>
                 )}
               </button>
             )}
@@ -537,14 +589,14 @@ export default function App() {
                 />
               </div>
               <div>
-                <h1 className="font-semibold text-lg tracking-tight">
-                  <span className="text-black">SALInA</span> <span className="text-gray-400 text-sm font-normal">(beta)</span>
+                <h1 className="font-semibold text-lg tracking-tight dark:text-white">
+                  <span className="text-black dark:text-white">SALInA</span> <span className="text-gray-400 dark:text-gray-500 text-sm font-normal">(beta)</span>
                 </h1>
                 <a 
                   href="https://www.ua.pt/pt/sbidm/salina" 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="text-[10px] text-emerald-600 font-bold uppercase tracking-widest hover:underline block"
+                  className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest hover:underline block"
                 >
                   Assistente IA das Bibliotecas UA v5.0
                 </a>
@@ -552,10 +604,31 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-xl p-1 mr-2">
+              <button
+                onClick={() => setLanguage('PT')}
+                className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all ${language === 'PT' ? 'bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'}`}
+              >
+                PT
+              </button>
+              <button
+                onClick={() => setLanguage('EN')}
+                className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all ${language === 'EN' ? 'bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'}`}
+              >
+                EN
+              </button>
+            </div>
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl transition-colors"
+              title={isDarkMode ? "Modo claro" : "Modo escuro"}
+            >
+              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
             <button 
               onClick={clearChat}
-              className="p-2 hover:bg-gray-100 text-gray-400 hover:text-gray-600 rounded-xl transition-colors"
-              title="Limpar conversa"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl transition-colors"
+              title={t.clearChat}
             >
               <Trash2 size={20} />
             </button>
@@ -576,33 +649,24 @@ export default function App() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <h2 className="text-3xl font-light text-gray-800">Como posso ajudar?</h2>
-                  <p className="text-gray-500 max-w-2xl mx-auto text-sm">
-                    Pesquise no catálogo das Bibliotecas UA, na Scopus, a vasta base de conhecimento dos Serviços de Referência e Formação dos SBIDM, veja a ocupação das bibliotecas, a agenda cultural, e muito mais...
+                  <h2 className="text-3xl font-light text-gray-800 dark:text-gray-100">{t.welcome}</h2>
+                  <p className="text-gray-500 dark:text-gray-400 max-w-2xl mx-auto text-sm">
+                    {t.description}
                   </p>
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full px-4">
-                  {[
-                    { label: "ocupação", query: "Biblioteca do Campus: qual é a ocupação atual e o estado do tempo?", icon: Clock },
-                    { label: "livros nas bibliotecas", query: "Obras sobre acidificação oceânica, pf.", icon: Book },
-                    { label: "artigos na Scopus", query: "artigos sobre aquecimento global", icon: FileText },
-                    { label: "bibliografia recomendada", query: 'Qual é a Bibliografia Recomendada da Unidade Curricular "Cálculo II"?', icon: Book },
-                    { label: "empréstimo", query: "A minha tia pode devolver os meus empréstimos?", icon: Clock },
-                    { label: "exposições", query: "Exposições, que temos?", icon: Image },
-                    { label: "write a DMP", query: "Help me write a DMP", icon: Database },
-                    { label: "(...)", query: "Où se situe l'UA?", icon: Globe },
-                  ].map((shortcut, i) => (
+                  {t.shortcuts.map((shortcut, i) => (
                     <button
                       key={i}
                       onClick={() => setInput(shortcut.query)}
-                      className="flex items-center justify-between px-4 py-3 bg-white border border-black/5 text-gray-600 rounded-xl shadow-sm hover:bg-gray-50 transition-all text-left group"
+                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 border border-black/5 dark:border-white/10 text-gray-600 dark:text-gray-300 rounded-xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-all text-left group"
                     >
                       <div className="flex items-center gap-3">
                         <shortcut.icon size={14} className="text-emerald-500 shrink-0" />
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">{shortcut.label}</span>
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">{shortcut.label}</span>
                       </div>
-                      <span className="text-sm text-gray-400 group-hover:text-gray-600 transition-colors">→</span>
+                      <span className="text-sm text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200 transition-colors">→</span>
                     </button>
                   ))}
                 </div>
@@ -619,7 +683,7 @@ export default function App() {
                 >
                   <div className={`flex gap-4 max-w-[90%] ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm overflow-hidden ${
-                      message.role === 'user' ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-gray-600 border border-black/5'
+                      message.role === 'user' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-black/5 dark:border-white/10'
                     }`}>
                       {message.role === 'user' ? (
                         <User size={20} />
@@ -636,9 +700,9 @@ export default function App() {
                       <div className={`p-5 rounded-2xl shadow-sm text-sm leading-relaxed ${
                         message.role === 'user' 
                           ? 'bg-emerald-600 text-white rounded-tr-none' 
-                          : 'bg-white text-gray-800 border border-black/5 rounded-tl-none'
+                          : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-black/5 dark:border-white/10 rounded-tl-none'
                       }`}>
-                        <div className="prose prose-sm max-w-none prose-emerald">
+                        <div className="prose prose-sm max-w-none prose-emerald dark:prose-invert">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             components={{
@@ -647,7 +711,7 @@ export default function App() {
                                   {...props} 
                                   target="_blank" 
                                   rel="noopener noreferrer" 
-                                  className="text-blue-600 hover:underline font-medium transition-colors"
+                                  className="text-blue-600 dark:text-blue-400 hover:underline font-medium transition-colors"
                                 />
                               )
                             }}
@@ -658,7 +722,7 @@ export default function App() {
                         {message.content === '' && isLoading && (
                           <div className="flex items-center gap-2 text-emerald-500">
                             <Loader2 size={18} className="animate-spin" />
-                            <span className="text-xs font-medium">Consultando...</span>
+                            <span className="text-xs font-medium">{t.consulting}</span>
                           </div>
                         )}
                       </div>
@@ -675,13 +739,13 @@ export default function App() {
         </main>
 
         {/* Input Area */}
-        <footer className="bg-white border-t border-black/5 p-6 z-10">
+        <footer className="bg-white dark:bg-gray-800 border-t border-black/5 dark:border-white/10 p-6 z-10 transition-colors">
           <div className="max-w-3xl mx-auto">
             {error && (
               <motion.div 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-xs flex items-center gap-2"
+                className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 rounded-xl text-xs flex items-center gap-2"
               >
                 <AlertCircle size={14} />
                 {error}
@@ -694,8 +758,8 @@ export default function App() {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Pergunte sobre documentos ou ocupação..."
-                  className="w-full bg-[#f8f9fa] border border-black/5 rounded-2xl py-4 px-6 text-sm focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-inner"
+                  placeholder={t.placeholder}
+                  className="w-full bg-[#f8f9fa] dark:bg-gray-700 border border-black/5 dark:border-white/10 rounded-2xl py-4 px-6 text-sm focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 dark:text-white transition-all shadow-inner"
                   disabled={isLoading}
                 />
               </div>
@@ -705,7 +769,7 @@ export default function App() {
                 disabled={!input.trim() || isLoading}
                 className={`p-4 rounded-2xl shadow-lg transition-all flex items-center justify-center ${
                   !input.trim() || isLoading
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
                     : 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
                 }`}
               >
