@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info, Book, Clock, Image, Database, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -62,7 +62,7 @@ export default function App() {
   const totalKbSize = kbFiles.reduce((acc, file) => acc + file.size, 0);
 
   // Smart RAG: Find relevant documents to stay within API token limits
-  const findRelevantContext = (query: string, files: KBFile[], maxChars: number = 600000) => {
+  const findRelevantContext = (query: string, files: KBFile[], maxChars: number = 1800000) => {
     if (files.length === 0) return "";
     
     const keywords = query.toLowerCase().split(/\W+/).filter(w => w.length > 3);
@@ -110,7 +110,7 @@ export default function App() {
     const lowerInput = input.toLowerCase();
     
     // Occupancy keywords
-    if (lowerInput.includes("ocupação") || lowerInput.includes("lotado") || lowerInput.includes("cheia") || lowerInput.includes("vazia") || lowerInput.includes("pessoas") || lowerInput.includes("lugar") || lowerInput.includes("estudantes")) {
+    if (lowerInput.includes("ocupação") || lowerInput.includes("lotado") || lowerInput.includes("cheia") || lowerInput.includes("vazia") || lowerInput.includes("pessoas") || lowerInput.includes("lugar") || lowerInput.includes("estudantes") || lowerInput.includes("occupancy") || lowerInput.includes("full") || lowerInput.includes("busy") || lowerInput.includes("crowded") || lowerInput.includes("people")) {
       let biblioteca = "BibUA";
       if (lowerInput.includes("mediateca")) biblioteca = "Mediateca";
       else if (lowerInput.includes("isca")) biblioteca = "ISCA";
@@ -121,7 +121,7 @@ export default function App() {
     }
     
     // Weather keywords
-    if (lowerInput.includes("tempo") || lowerInput.includes("clima") || lowerInput.includes("chuva") || lowerInput.includes("sol") || lowerInput.includes("temperatura") || lowerInput.includes("meteo")) {
+    if (lowerInput.includes("tempo") || lowerInput.includes("clima") || lowerInput.includes("chuva") || lowerInput.includes("sol") || lowerInput.includes("temperatura") || lowerInput.includes("meteo") || lowerInput.includes("weather") || lowerInput.includes("rain") || lowerInput.includes("sun") || lowerInput.includes("temperature")) {
       let biblioteca = "BibUA";
       if (lowerInput.includes("águeda") || lowerInput.includes("estga")) biblioteca = "ESTGA";
       else if (lowerInput.includes("oliveira") || lowerInput.includes("esan")) biblioteca = "ESAN";
@@ -129,23 +129,13 @@ export default function App() {
       return { intent: "getWeather", language: "PT", parameters: { biblioteca } };
     }
     
-    // OPAC keywords
-    if (lowerInput.includes("livro") || lowerInput.includes("autor") || lowerInput.includes("título") || lowerInput.includes("assunto") || lowerInput.includes("pesquisar") || lowerInput.includes("obra") || lowerInput.includes("catálogo")) {
-      return { intent: "searchOPAC", language: "PT", parameters: { query: input, idx: "Kw" } };
-    }
-    
-    // Scopus keywords
-    if (lowerInput.includes("artigo") || lowerInput.includes("científico") || lowerInput.includes("scopus") || lowerInput.includes("revista") || lowerInput.includes("paper") || lowerInput.includes("investigação")) {
-      return { intent: "searchScopus", language: "PT", parameters: { query: `(TITLE-ABS-KEY(${input.split(' ').join(' AND ')}))` } };
-    }
-    
     // Events keywords
-    if (lowerInput.includes("evento") || lowerInput.includes("exposição") || lowerInput.includes("workshop") || lowerInput.includes("agenda") || lowerInput.includes("atividade")) {
+    if (lowerInput.includes("evento") || lowerInput.includes("exposição") || lowerInput.includes("workshop") || lowerInput.includes("agenda") || lowerInput.includes("atividade") || lowerInput.includes("event") || lowerInput.includes("exhibition") || lowerInput.includes("activity")) {
       return { intent: "getLibraryEvents", language: "PT", parameters: {} };
     }
     
-    // Default
-    return { intent: "searchKB", language: "PT", parameters: { query: input } };
+    // No direct match
+    return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -266,81 +256,90 @@ export default function App() {
 
     try {
       // 1. Intent Interpretation (Orchestration)
-      const orchestrationPrompt = `
-        You are the Orchestrator for SALInA, the Virtual Assistant of the University of Aveiro Libraries.
-        Analyze the user query and return a JSON strategy.
-
-        JSON structure:
-        {
-          "intent": "getLibraryOccupancy" | "searchOPAC" | "searchScopus" | "getLibraryEvents" | "getWeather" | "searchKB",
-          "language": "PT" | "EN" | "ES" | "FR" | "DE",
-          "parameters": {
-            "biblioteca": "BibUA" | "Mediateca" | "ISCA" | "ESAN" | "ESTGA", // For occupancy/weather
-            "query": "string", // For OPAC, Scopus, KB
-            "idx": "Kw" | "ti" | "au" | "su" // For OPAC
-          }
-        }
-
-        Intents:
-        - getLibraryOccupancy: Questions about how many people are in the library, if it's full, or busy.
-        - searchOPAC: Search for books, authors, or subjects in the library catalog.
-        - searchScopus: Search for scientific articles, research papers, or journals.
-        - getLibraryEvents: Questions about exhibitions, workshops, or cultural events at the library.
-        - getWeather: Questions about the weather in Aveiro, Águeda, or Oliveira de Azeméis.
-        - searchKB: General information about the library, schedules, rules, services, or any other topic not covered by tools.
-
-        Translation Rules:
-        - searchOPAC: If the search is by subject (idx: "su") and the user's query is NOT in Portuguese, the "query" parameter MUST be translated to Portuguese.
-        - searchScopus: If the user's query is NOT in English, you MUST translate it to English and combine both versions. The "query" parameter MUST follow this EXACT format: "(TITLE-ABS-KEY(original terms)) OR (TITLE-ABS-KEY(english terms))". Inside each TITLE-ABS-KEY, multiple words MUST be joined with AND. 
-          Example for "aquecimento global": "(TITLE-ABS-KEY(aquecimento AND global)) OR (TITLE-ABS-KEY(global AND warming))"
-          Example for "inteligência artificial": "(TITLE-ABS-KEY(inteligência AND artificial)) OR (TITLE-ABS-KEY(artificial AND intelligence))"
-        - searchScopus (English query): If the query is already in English, just wrap it in TITLE-ABS-KEY and join multiple words with AND. Example: "TITLE-ABS-KEY(global AND warming)".
-
-        Language Detection: Identify the language of the question (PT, EN, ES, FR, DE).
-
-        Default to 'searchKB' and 'PT' if unsure.
-      `;
-
       let strategy: any = null;
       let orchestrationModelUsed = "";
 
-      // Step 1: Specific models for orchestration
-      const envOrchestrationModels = import.meta.env.VITE_ORCHESTRATION_MODELS;
-      const orchestrationModels = envOrchestrationModels 
-        ? envOrchestrationModels.split(',').map((m: string) => m.trim())
-        : ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
-      
-      for (let i = 0; i < orchestrationModels.length; i++) {
-        const modelName = orchestrationModels[i];
-        try {
-          const orchestrationResponse = await ai.models.generateContent({
-            model: modelName,
-            contents: [{ role: 'user', parts: [{ text: input }] }],
-            config: {
-              systemInstruction: orchestrationPrompt,
-              responseMimeType: "application/json",
-              temperature: 0.1,
+      // Step 1: Keyword-based matching first
+      strategy = orchestrateByKeywords(input);
+      if (strategy) {
+        orchestrationModelUsed = "Keywords (Direct Match)";
+      }
+
+      // Step 2: Recurse to orchestration model if no direct keyword match
+      if (!strategy) {
+        const orchestrationPrompt = `
+          You are the Orchestrator for SALInA, the Virtual Assistant of the University of Aveiro Libraries.
+          Analyze the user query and return a JSON strategy.
+
+          JSON structure:
+          {
+            "intent": "getLibraryOccupancy" | "searchOPAC" | "searchScopus" | "getLibraryEvents" | "getWeather" | "searchKB",
+            "language": "PT" | "EN" | "ES" | "FR" | "DE",
+            "parameters": {
+              "biblioteca": "BibUA" | "Mediateca" | "ISCA" | "ESAN" | "ESTGA", // For occupancy/weather
+              "query": "string", // For OPAC, Scopus, KB
+              "idx": "Kw" | "ti" | "au" | "su" // For OPAC
             }
-          });
-          strategy = JSON.parse(orchestrationResponse.text || "{}");
-          orchestrationModelUsed = modelName;
-          break;
-        } catch (err: any) {
-          const isRetryable = err.message?.includes("429") || err.message?.includes("503");
-          console.error(`Orchestration failed with ${modelName}:`, err);
-          
-          if (isRetryable && i < orchestrationModels.length - 1) {
-            console.warn(`Model ${modelName} failed (${err.message}), trying fallback ${orchestrationModels[i+1]}...`);
-            continue;
           }
-          break;
+
+          Intents:
+          - getLibraryOccupancy: Questions about how many people are in the library, if it's full, or busy.
+          - searchOPAC: Search for books, authors, or subjects in the library catalog.
+          - searchScopus: Search for scientific articles, research papers, or journals.
+          - getLibraryEvents: Questions about exhibitions, workshops, or cultural events at the library.
+          - getWeather: Questions about the weather in Aveiro, Águeda, or Oliveira de Azeméis.
+          - searchKB: General information about the library, schedules, rules, services, or any other topic not covered by tools.
+
+          Translation Rules:
+          - searchOPAC: If the user's query is NOT in Portuguese, you MUST translate the terms to Portuguese. The "query" parameter MUST be the translated version in Portuguese.
+          - searchScopus: If the user's query is NOT in English, you MUST translate it to English and combine both versions. The "query" parameter MUST follow this EXACT format: "(TITLE-ABS-KEY(original terms)) OR (TITLE-ABS-KEY(english terms))". Inside each TITLE-ABS-KEY, multiple words MUST be joined with AND. 
+            Example for "aquecimento global": "(TITLE-ABS-KEY(aquecimento AND global)) OR (TITLE-ABS-KEY(global AND warming))"
+            Example for "inteligência artificial": "(TITLE-ABS-KEY(inteligência AND artificial)) OR (TITLE-ABS-KEY(artificial AND intelligence))"
+          - searchScopus (English query): If the query is already in English, just wrap it in TITLE-ABS-KEY and join multiple words with AND. Example: "TITLE-ABS-KEY(global AND warming)".
+
+          Language Detection: Identify the language of the question (PT, EN, ES, FR, DE).
+
+          Default to 'searchKB' and 'PT' if unsure.
+        `;
+
+        const envOrchestrationModels = import.meta.env.VITE_ORCHESTRATION_MODELS;
+        const orchestrationModels = envOrchestrationModels 
+          ? envOrchestrationModels.split(',').map((m: string) => m.trim())
+          : ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
+        
+        for (let i = 0; i < orchestrationModels.length; i++) {
+          const modelName = orchestrationModels[i];
+          try {
+            const orchestrationResponse = await ai.models.generateContent({
+              model: modelName,
+              contents: [{ role: 'user', parts: [{ text: input }] }],
+              config: {
+                systemInstruction: orchestrationPrompt,
+                responseMimeType: "application/json",
+                temperature: 0.1,
+              }
+            });
+            strategy = JSON.parse(orchestrationResponse.text || "{}");
+            orchestrationModelUsed = modelName;
+            break;
+          } catch (err: any) {
+            const isRetryable = err.message?.includes("429") || err.message?.includes("503");
+            console.error(`Orchestration failed with ${modelName}:`, err);
+            
+            if (isRetryable && i < orchestrationModels.length - 1) {
+              console.warn(`Model ${modelName} failed (${err.message}), trying fallback ${orchestrationModels[i+1]}...`);
+              continue;
+            }
+            break;
+          }
         }
       }
 
-      if (!strategy) {
-        console.warn("Using keyword-based orchestration fallback...");
-        strategy = orchestrateByKeywords(input);
-        orchestrationModelUsed = "Keywords (Fallback)";
+      // Step 3: Final fallback to RAG (Knowledge Base) if both failed
+      if (!strategy || !strategy.intent) {
+        console.warn("Using Knowledge Base (RAG) as final fallback...");
+        strategy = { intent: "searchKB", language: "PT", parameters: { query: input } };
+        orchestrationModelUsed = "RAG Fallback";
       }
 
       const { intent, language = 'PT', parameters = {} } = strategy;
@@ -464,18 +463,6 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl space-y-2">
-            <div className="flex items-center gap-2 text-emerald-700 font-medium text-xs">
-              <Info size={14} />
-              <span>Status da Base</span>
-            </div>
-            <div className="text-[11px] text-emerald-600 space-y-1">
-              <p>Arquivos: {kbFiles.length}</p>
-              <p>Tamanho total: {(totalKbSize / 1024).toFixed(1)} KB</p>
-              <p className="mt-2 italic opacity-70">Carregados da pasta /KB</p>
-            </div>
-          </div>
-
           <div className="space-y-2">
             {kbFiles.length === 0 && (
               <p className="text-[11px] text-gray-400 text-center py-8 italic">
@@ -560,25 +547,32 @@ export default function App() {
                 </div>
                 <div className="space-y-2">
                   <h2 className="text-3xl font-light text-gray-800">Como posso ajudar?</h2>
-                  <p className="text-gray-500 max-w-md mx-auto text-sm">
-                    Pesquise no catálogo OPAC, artigos na Scopus, consulte a ocupação das bibliotecas ou a agenda cultural.
+                  <p className="text-gray-500 max-w-2xl mx-auto text-sm">
+                    Pesquise no catálogo das Bibliotecas UA, artigos na Scopus, a vasta base de conhecimento dos Serviços de Referência e Formação dos SBIDM, consulte a ocupação das bibliotecas, a agenda cultural, e muito mais...
                   </p>
                 </div>
                 
-                <div className="flex flex-wrap justify-center gap-3">
-                  {kbFiles.length > 0 && (
-                    <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium border border-emerald-100">
-                      <CheckCircle2 size={14} />
-                      {kbFiles.length} documentos carregados da pasta /KB
-                    </div>
-                  )}
-                  <button 
-                    onClick={() => setInput("Quantas pessoas estão na Biblioteca Central agora?")}
-                    className="flex items-center gap-2 px-6 py-3 bg-white border border-black/5 text-gray-600 rounded-2xl shadow-sm hover:bg-gray-50 transition-all"
-                  >
-                    <Info size={18} className="text-emerald-500" />
-                    Ocupação Real-Time
-                  </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full px-4">
+                  {[
+                    { label: "livros nas bibliotecas", query: "Obras sobre acidificação oceânica, pf.", icon: Book },
+                    { label: "artigos na Scopus", query: "artigos sobre aquecimento global", icon: FileText },
+                    { label: "empréstimo", query: "A minha tia pode devolver os meus empréstimos?", icon: Clock },
+                    { label: "exposições", query: "Exposições, que temos?", icon: Image },
+                    { label: "write a DMP", query: "Help me write a DMP", icon: Database },
+                    { label: "(...)", query: "Où se situe l'UA?", icon: Globe },
+                  ].map((shortcut, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setInput(shortcut.query)}
+                      className="flex items-center justify-between px-4 py-3 bg-white border border-black/5 text-gray-600 rounded-xl shadow-sm hover:bg-gray-50 transition-all text-left group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <shortcut.icon size={14} className="text-emerald-500 shrink-0" />
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">{shortcut.label}</span>
+                      </div>
+                      <span className="text-sm text-gray-400 group-hover:text-gray-600 transition-colors">→</span>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -687,7 +681,7 @@ export default function App() {
               </button>
             </form>
             <p className="text-[10px] text-center text-gray-400 mt-4 uppercase tracking-widest font-medium">
-              Grounded + Real-Time UA Libraries
+              Grounded + Real-Time UA Libraries + <a href="https://github.com/fmbento/Grounded-Knowledge-Chatbot" target="_blank" rel="noopener noreferrer" className="hover:text-emerald-600 transition-colors underline underline-offset-2">100% Open Source</a>
             </p>
           </div>
         </footer>
