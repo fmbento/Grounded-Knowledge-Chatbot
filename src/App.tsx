@@ -63,7 +63,7 @@ export default function App() {
   const totalKbSize = kbFiles.reduce((acc, file) => acc + file.size, 0);
 
   // Smart RAG: Find relevant documents to stay within API token limits
-  const findRelevantContext = (query: string, files: KBFile[], maxChars: number = 1200000) => {
+  const findRelevantContext = (query: string, files: KBFile[], maxChars: number = 800000) => {
     if (files.length === 0) return "";
     
     const keywords = query.toLowerCase().split(/\W+/).filter(w => w.length > 3);
