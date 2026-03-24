@@ -2,7 +2,7 @@
 
 ## 📋 Overview
 
-**Grounded-Knowledge-Chatbot** is an intelligent conversational AI system powered by **Google's Gemini API** with intelligent fallback model switching. It provides reliable, knowledge-base-grounded responses by integrating with multiple academic and research APIs for real-time data retrieval.
+**Grounded-Knowledge-Chatbot** is an intelligent, **100% Open Source** conversational AI system powered by **Google's Gemini API** with intelligent fallback model switching. It provides reliable, knowledge-base-grounded responses by integrating with multiple academic and research APIs for real-time data retrieval.
 
 The system features:
 - 🧠 **Google Gemini Integration** with multiple model fallbacks (Gemini 3 Flash, 2.5 Flash, etc.)
@@ -16,6 +16,8 @@ The system features:
 - 📱 Responsive React frontend with Tailwind CSS
 - 🐳 Docker support for easy deployment
 - 🔐 Full TypeScript support with type safety
+- 🔓 **100% Open Source** (MIT Licensed)
+- 🎨 **Enhanced UI** with Lucide icons and responsive layouts
 
 ---
 
@@ -376,6 +378,12 @@ For support, please:
 
 ## 🔄 Changelog
 
+### Version 0.1.1
+- 🎨 **UI Enhancements**: Added alusive icons to question shortcuts
+- 📏 **Layout Optimization**: Improved text flow for welcome messages to prevent awkward line breaks
+- 🔗 **Open Source Branding**: Updated footer with direct link to the GitHub repository
+- 📝 **Documentation**: Updated README to reflect latest features and open-source status
+
 ### Version 0.1.0
 - Initial release
 - Google Gemini API integration with model fallback
@@ -473,4 +481,4 @@ These rules help ensure that searches in specialized databases (like the UA libr
 
 ---
 
-**Last Updated:** March 23, 2026
+**Last Updated:** March 24, 2026
