@@ -104,7 +104,51 @@ export default function App() {
   };
 
   const systemPromptFile = kbFiles.find(f => f.name === 'system_prompt.txt');
-  const baseSystemPrompt = systemPromptFile?.content || "Você é Salina, a Assistente Virtual das Bibliotecas da Universidade de Aveiro.";  const handleSubmit = async (e: React.FormEvent) => {
+  const baseSystemPrompt = systemPromptFile?.content || "Você é Salina, a Assistente Virtual das Bibliotecas da Universidade de Aveiro.";
+
+  const orchestrateByKeywords = (input: string) => {
+    const lowerInput = input.toLowerCase();
+    
+    // Occupancy keywords
+    if (lowerInput.includes("ocupação") || lowerInput.includes("lotado") || lowerInput.includes("cheia") || lowerInput.includes("vazia") || lowerInput.includes("pessoas") || lowerInput.includes("lugar") || lowerInput.includes("estudantes")) {
+      let biblioteca = "BibUA";
+      if (lowerInput.includes("mediateca")) biblioteca = "Mediateca";
+      else if (lowerInput.includes("isca")) biblioteca = "ISCA";
+      else if (lowerInput.includes("esan") || lowerInput.includes("oliveira")) biblioteca = "ESAN";
+      else if (lowerInput.includes("estga") || lowerInput.includes("águeda")) biblioteca = "ESTGA";
+      
+      return { intent: "getLibraryOccupancy", language: "PT", parameters: { biblioteca } };
+    }
+    
+    // Weather keywords
+    if (lowerInput.includes("tempo") || lowerInput.includes("clima") || lowerInput.includes("chuva") || lowerInput.includes("sol") || lowerInput.includes("temperatura") || lowerInput.includes("meteo")) {
+      let biblioteca = "BibUA";
+      if (lowerInput.includes("águeda") || lowerInput.includes("estga")) biblioteca = "ESTGA";
+      else if (lowerInput.includes("oliveira") || lowerInput.includes("esan")) biblioteca = "ESAN";
+      
+      return { intent: "getWeather", language: "PT", parameters: { biblioteca } };
+    }
+    
+    // OPAC keywords
+    if (lowerInput.includes("livro") || lowerInput.includes("autor") || lowerInput.includes("título") || lowerInput.includes("assunto") || lowerInput.includes("pesquisar") || lowerInput.includes("obra") || lowerInput.includes("catálogo")) {
+      return { intent: "searchOPAC", language: "PT", parameters: { query: input, idx: "Kw" } };
+    }
+    
+    // Scopus keywords
+    if (lowerInput.includes("artigo") || lowerInput.includes("científico") || lowerInput.includes("scopus") || lowerInput.includes("revista") || lowerInput.includes("paper") || lowerInput.includes("investigação")) {
+      return { intent: "searchScopus", language: "PT", parameters: { query: `(TITLE-ABS-KEY(${input.split(' ').join(' AND ')}))` } };
+    }
+    
+    // Events keywords
+    if (lowerInput.includes("evento") || lowerInput.includes("exposição") || lowerInput.includes("workshop") || lowerInput.includes("agenda") || lowerInput.includes("atividade")) {
+      return { intent: "getLibraryEvents", language: "PT", parameters: {} };
+    }
+    
+    // Default
+    return { intent: "searchKB", language: "PT", parameters: { query: input } };
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
@@ -257,7 +301,7 @@ export default function App() {
         Default to 'searchKB' and 'PT' if unsure.
       `;
 
-      let strategy: any = { intent: "searchKB", language: "PT", parameters: { query: input } };
+      let strategy: any = null;
       let orchestrationModelUsed = "";
 
       // Step 1: Specific models for orchestration
@@ -266,7 +310,8 @@ export default function App() {
         ? envOrchestrationModels.split(',').map((m: string) => m.trim())
         : ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
       
-      for (const modelName of orchestrationModels) {
+      for (let i = 0; i < orchestrationModels.length; i++) {
+        const modelName = orchestrationModels[i];
         try {
           const orchestrationResponse = await ai.models.generateContent({
             model: modelName,
@@ -281,15 +326,21 @@ export default function App() {
           orchestrationModelUsed = modelName;
           break;
         } catch (err: any) {
-          if (err.message?.includes("429") && modelName === orchestrationModels[0]) {
-            console.warn(`Model ${modelName} rate limited during orchestration, trying fallback ${orchestrationModels[1]}...`);
+          const isRetryable = err.message?.includes("429") || err.message?.includes("503");
+          console.error(`Orchestration failed with ${modelName}:`, err);
+          
+          if (isRetryable && i < orchestrationModels.length - 1) {
+            console.warn(`Model ${modelName} failed (${err.message}), trying fallback ${orchestrationModels[i+1]}...`);
             continue;
           }
-          console.error(`Orchestration failed with ${modelName}:`, err);
-          // If both fail or it's not a 429 on the first one, we might still want to try the next if it's the first one
-          if (modelName === orchestrationModels[0]) continue;
           break;
         }
+      }
+
+      if (!strategy) {
+        console.warn("Using keyword-based orchestration fallback...");
+        strategy = orchestrateByKeywords(input);
+        orchestrationModelUsed = "Keywords (Fallback)";
       }
 
       const { intent, language = 'PT', parameters = {} } = strategy;
@@ -368,8 +419,8 @@ export default function App() {
           }
           break;
         } catch (err: any) {
-          if (err.message?.includes("429")) {
-            console.warn(`Model ${modelName} rate limited during final generation, trying next...`);
+          if (err.message?.includes("429") || err.message?.includes("503")) {
+            console.warn(`Model ${modelName} failed (${err.message}) during final generation, trying next...`);
             continue;
           }
           throw err;
