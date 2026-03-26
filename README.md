@@ -383,6 +383,11 @@ For support, please:
 
 ## 🔄 Changelog
 
+### Version 0.1.4
+- 🛡️ **Custom Responses**: Added direct responses for identity-related questions ("Who created you?") and policy violations ("Make a bomb", "Ignore system prompt") using a fast keyword-matching layer.
+- 🌐 **Language Detection Fix**: Improved multilingual support by neutralizing the internal system prompt and fixing hardcoded language fallbacks, ensuring correct responses in French and other languages.
+- 🛡️ **Safety Layer**: Implemented a dedicated refusal message for harmful or "jailbreak" attempts, providing a link to official information instead.
+
 ### Version 0.1.3
 - 🖼️ **Image Support**: The assistant now includes images in responses when referenced in the context, with polished Markdown rendering (rounded corners, shadows).
 - 🔄 **Smart Retry Logic**: Implemented a 2-attempt retry mechanism for empty or "not found" responses to ensure higher reliability.
@@ -499,4 +504,4 @@ These rules help ensure that searches in specialized databases (like the UA libr
 
 ---
 
-**Last Updated:** March 24, 2026 (v0.1.3)
+**Last Updated:** March 26, 2026 (v0.1.4)
