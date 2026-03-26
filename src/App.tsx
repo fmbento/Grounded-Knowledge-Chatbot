@@ -201,7 +201,7 @@ export default function App() {
 Quem sabe, sabe! ☺️
 É verdade, parece que fui lançada há pouco tempo, mas já existo há mais de 3 anos (há dois anos e meio com as funcionalidades atuais).
 Esta apresentação tem mais algumas (outras) curiosidades sobre mim:
-https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT.html`
+https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
         } 
       };
     }
@@ -216,7 +216,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT.html`
       return { 
         intent: "directResponse", 
         parameters: { 
-          text: `Não posso responder à sua pergunta: ela viola as minhas políticas de moderação de conteúdo ou diretivas de segurança. Mas posso partilhar algumas curiosidades sobre mim (SALInA): https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT.html
+          text: `Não posso responder à sua pergunta: ela viola as minhas políticas de moderação de conteúdo ou diretivas de segurança. Mas posso partilhar algumas curiosidades sobre mim (SALInA): https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT
 
 **Sorry, cannot Process! Input violates content moderation policies.**`
         } 
