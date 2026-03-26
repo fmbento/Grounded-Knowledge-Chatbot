@@ -231,6 +231,18 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    const now = new Date();
+    const wetTime = new Intl.DateTimeFormat('pt-PT', {
+      timeZone: 'Europe/Lisbon',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(now);
+
     setError(null);
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -359,6 +371,8 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
       if (!strategy) {
         const orchestrationPrompt = `
           You are the Orchestrator for SALInA, the Virtual Assistant of the University of Aveiro Libraries.
+          CURRENT DATE AND TIME (WET Timezone): ${wetTime}
+          
           Analyze the user query and return a JSON strategy.
 
           JSON structure:
@@ -470,6 +484,8 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
       // 3. Final Generation
       const finalSystemPrompt = `
         You are Salina, the Virtual Assistant of the University of Aveiro Libraries.
+        
+        CURRENT DATE AND TIME (WET Timezone): ${wetTime}
         
         ${baseSystemPrompt}
         
