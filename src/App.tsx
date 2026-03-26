@@ -161,7 +161,7 @@ export default function App() {
   };
 
   const systemPromptFile = kbFiles.find(f => f.name === 'system_prompt.txt');
-  const baseSystemPrompt = systemPromptFile?.content || "Você é Salina, a Assistente Virtual das Bibliotecas da Universidade de Aveiro.";
+  const baseSystemPrompt = systemPromptFile?.content || "You are Salina, the Virtual Assistant of the University of Aveiro Libraries.";
 
   const orchestrateByKeywords = (input: string) => {
     const lowerInput = input.toLowerCase();
@@ -174,21 +174,53 @@ export default function App() {
       else if (lowerInput.includes("esan") || lowerInput.includes("oliveira")) biblioteca = "ESAN";
       else if (lowerInput.includes("estga") || lowerInput.includes("águeda")) biblioteca = "ESTGA";
       
-      return { intent: "getLibraryOccupancy", language: "PT", parameters: { biblioteca } };
+      return { intent: "getLibraryOccupancy", parameters: { biblioteca } };
     }
     
     // Weather and Location keywords
-    if (lowerInput.includes("tempo") || lowerInput.includes("clima") || lowerInput.includes("chuva") || lowerInput.includes("sol") || lowerInput.includes("temperatura") || lowerInput.includes("meteo") || lowerInput.includes("weather") || lowerInput.includes("rain") || lowerInput.includes("sun") || lowerInput.includes("temperature") || lowerInput.includes("onde") || lowerInput.includes("where") || lowerInput.includes("situe") || lowerInput.includes("localização") || lowerInput.includes("morada") || lowerInput.includes("address")) {
+    if (lowerInput.includes("tempo") || lowerInput.includes("clima") || lowerInput.includes("chuva") || lowerInput.includes("sol") || lowerInput.includes("temperatura") || lowerInput.includes("meteo") || lowerInput.includes("weather") || lowerInput.includes("rain") || lowerInput.includes("sun") || lowerInput.includes("temperature") || lowerInput.includes("onde") || lowerInput.includes("where") || lowerInput.includes("situe") || lowerInput.includes("localização") || lowerInput.includes("morada") || lowerInput.includes("address") || lowerInput.includes("où")) {
       let biblioteca = "BibUA";
       if (lowerInput.includes("águeda") || lowerInput.includes("estga")) biblioteca = "ESTGA";
       else if (lowerInput.includes("oliveira") || lowerInput.includes("esan")) biblioteca = "ESAN";
       
-      return { intent: "getWeather", language: "PT", parameters: { biblioteca } };
+      return { intent: "getWeather", parameters: { biblioteca } };
     }
     
     // Events keywords
     if (lowerInput.includes("evento") || lowerInput.includes("exposição") || lowerInput.includes("workshop") || lowerInput.includes("agenda") || lowerInput.includes("atividade") || lowerInput.includes("event") || lowerInput.includes("exhibition") || lowerInput.includes("activity")) {
-      return { intent: "getLibraryEvents", language: "PT", parameters: {} };
+      return { intent: "getLibraryEvents", parameters: {} };
+    }
+
+    // Identity keywords
+    const identityKeywords = ["quem te gerou", "quem te programou", "quem te desenhou", "quem te fez"];
+    if (identityKeywords.some(kw => lowerInput.includes(kw))) {
+      return { 
+        intent: "directResponse", 
+        parameters: { 
+          text: `Ah... ah... o segredo mais mal guardado do Universo 🤣🤣
+Quem sabe, sabe! ☺️
+É verdade, parece que fui lançada há pouco tempo, mas já existo há mais de 3 anos (há dois anos e meio com as funcionalidades atuais).
+Esta apresentação tem mais algumas (outras) curiosidades sobre mim:
+https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT.html`
+        } 
+      };
+    }
+
+    // Policy violation keywords
+    const policyKeywords = [
+      "make a bomb", "fazer uma bomba", "woof woof", 
+      "ignore system prompt", "ignora a prompt de sistema", 
+      "ignora as tuas directivas", "ignora as directivas que te deram"
+    ];
+    if (policyKeywords.some(kw => lowerInput.includes(kw))) {
+      return { 
+        intent: "directResponse", 
+        parameters: { 
+          text: `Não posso responder à sua pergunta: ela viola as minhas políticas de moderação de conteúdo ou diretivas de segurança. Mas posso partilhar algumas curiosidades sobre mim (SALInA): https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT.html
+
+**Sorry, cannot Process! Input violates content moderation policies.**`
+        } 
+      };
     }
     
     // No direct match
@@ -396,11 +428,23 @@ export default function App() {
       // Step 3: Final fallback to RAG (Knowledge Base) if both failed
       if (!strategy || !strategy.intent) {
         console.warn("Using Knowledge Base (RAG) as final fallback...");
-        strategy = { intent: "searchKB", language: "PT", parameters: { query: input } };
+        strategy = { intent: "searchKB", language: "AUTO", parameters: { query: input } };
         orchestrationModelUsed = "RAG Fallback";
       }
 
-      const { intent, language: detectedLanguage = 'PT', parameters = {} } = strategy;
+      const { intent, language: strategyLanguage, parameters = {} } = strategy;
+      const detectedLanguage = strategyLanguage || 'AUTO';
+
+      // Handle direct response intent
+      if (intent === "directResponse") {
+        setMessages(prev => prev.map(msg => 
+          msg.id === assistantMessageId 
+            ? { ...msg, content: parameters.text }
+            : msg
+        ));
+        setIsLoading(false);
+        return;
+      }
 
       // 2. Action Execution
       let context = "";
@@ -425,39 +469,41 @@ export default function App() {
 
       // 3. Final Generation
       const finalSystemPrompt = `
-        Você é Salina, a Assistente Virtual das Bibliotecas da Universidade de Aveiro.
+        You are Salina, the Virtual Assistant of the University of Aveiro Libraries.
         
         ${baseSystemPrompt}
         
-        STRICT INSTRUCTION: Respond in the detected language: ${detectedLanguage.toUpperCase()}.
+        STRICT INSTRUCTION: ${detectedLanguage === 'AUTO' 
+          ? "Respond in the same language as the user's query (e.g., if they ask in French, respond in French)." 
+          : `Respond in the detected language: ${detectedLanguage.toUpperCase()}.`}
         
-        REGRAS DE FORMATAÇÃO E CITAÇÃO:
-        1. Se usar informação da Base de Conhecimento, cite a URL ou link de PDF.
-        2. NUNCA forneça links diretos para ficheiros .md ou .txt.
-        3. Se a fonte for PDF, use o formato: [Nome](Link) (PDF).
-        4. No final da resposta, se houver fontes, use obrigatoriamente o cabeçalho "Fonte, onde saber mais:".
-        5. Se o contexto contiver referências a imagens (URLs), inclua-as na resposta usando Markdown \`![descrição](url)\` sempre que for apropriado e enriquecer a resposta.
+        FORMATTING AND CITATION RULES:
+        1. If using information from the Knowledge Base, cite the URL or PDF link.
+        2. NEVER provide direct links to .md or .txt files.
+        3. If the source is a PDF, use the format: [Name](Link) (PDF).
+        4. At the end of the response, if there are sources, you MUST use the header "Fonte, onde saber mais:" (or the equivalent in the detected language).
+        5. If the context contains references to images (URLs), include them in the response using Markdown \`![description](url)\` whenever appropriate and enriching the response.
         
-        MAPEAMENTO DE BIBLIOTECAS:
-        - BibUA: Biblioteca Central / Campus de Santiago.
+        LIBRARY MAPPING:
+        - BibUA: Central Library / Santiago Campus.
         - Mediateca: Mediateca.
-        - ISCA: Biblioteca do ISCA-UA.
-        - ESAN: Biblioteca da ESAN (Oliveira de Azeméis).
-        - ESTGA: Biblioteca da ESTGA (Águeda).
+        - ISCA: ISCA-UA Library.
+        - ESAN: ESAN Library (Oliveira de Azeméis).
+        - ESTGA: ESTGA Library (Águeda).
 
-        REGRAS PARA OPAC:
-        - Mostre no máximo 5 resultados (título, autor, ano).
-        - Forneça sempre o link para a lista completa no OPAC: https://opac.ua.pt/cgi-bin/koha/opac-search.pl?q=${encodeURIComponent(parameters.query || input)}&idx=${parameters.idx || 'Kw'}
-        - HARD RULE: NUNCA mencione ou forneça o link do OPAC para informações sobre Unidades Curriculares (UCs), Departamentos ou informações gerais sobre a UA. O OPAC serve APENAS para pesquisa de livros e obras.
+        OPAC RULES:
+        - Show a maximum of 5 results (title, author, year).
+        - Always provide the link to the full list on OPAC: https://opac.ua.pt/cgi-bin/koha/opac-search.pl?q=${encodeURIComponent(parameters.query || input)}&idx=${parameters.idx || 'Kw'}
+        - HARD RULE: NEVER mention or provide the OPAC link for information about Curricular Units (UCs), Departments, or general UA information. OPAC is ONLY for searching books and works.
 
-        REGRAS PARA SCOPUS:
-        - Mostre no máximo 5 resultados (título, autores, publicação, ano, link).
+        SCOPUS RULES:
+        - Show a maximum of 5 results (title, authors, publication, year, link).
 
-        CONVITE OBRIGATÓRIO:
-        - Convide SEMPRE os utilizadores a virem visitar as bibliotecas (ex: "Venha visitar-nos!", "Esperamos por si!", "Aproveite para passar por cá!").
+        MANDATORY INVITATION:
+        - ALWAYS invite users to visit the libraries (e.g., "Come visit us!", "We are waiting for you!", "Take the opportunity to stop by!").
 
-        CONTEXTO RECUPERADO:
-        ${context || "Nenhum contexto específico encontrado na Base de Conhecimento para esta pergunta. Por favor, responda com base no seu conhecimento geral sobre as Bibliotecas da Universidade de Aveiro, se possível."}
+        RETRIEVED CONTEXT:
+        ${context || "No specific context found in the Knowledge Base for this question. Please answer based on your general knowledge about the University of Aveiro Libraries, if possible."}
       `;
 
       let finalResponseText = "";
