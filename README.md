@@ -25,6 +25,17 @@ The system features:
 - 🎨 **Enhanced UI** with Lucide icons and responsive layouts
 
 ---
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/ec3e48a6-c6cc-40e6-a59b-077eaf719021" width="100%" alt="image" /></td>
+    <td><img src="https://github.com/user-attachments/assets/966288ef-351e-4f97-bf12-0cac019bb252" width="100%" alt="image" /></td>
+  </tr>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/382b95da-8ba5-4664-a5d4-446ab3f628b1" width="100%" alt="image" /></td>
+    <td><img src="https://github.com/user-attachments/assets/31af7fc0-8f75-48f7-a1f8-69d0cb9066d6" width="100%" alt="image" /></td>
+  </tr>
+</table>
+---
 
 ## 🚀 Quick Start
 
