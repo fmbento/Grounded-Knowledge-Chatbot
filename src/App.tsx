@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info, Book, Clock, Image, Database, Globe, Moon, Sun } from 'lucide-react';
+import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info, Book, Clock, Image, Database, Globe, Moon, Sun, Volume2, VolumeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
 interface Message {
   id: string;
@@ -29,6 +29,26 @@ export default function App() {
   const [isKbOpen, setIsKbOpen] = useState(false);
   const [language, setLanguage] = useState<'PT' | 'EN'>('PT');
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isReadAloud, setIsReadAloud] = useState(() => {
+    const saved = localStorage.getItem('isReadAloud');
+    return saved === 'true';
+  });
+  const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null);
+  
+  const currentAudioRef = useRef<{ 
+    source: AudioBufferSourceNode, 
+    context: AudioContext, 
+    startTime: number, 
+    offset: number,
+    messageId: string,
+    sentenceIndex: number
+  } | null>(null);
+  const audioBufferCache = useRef<Map<string, AudioBuffer[]>>(new Map());
+  const isStoppingRef = useRef(false);
+
+  useEffect(() => {
+    localStorage.setItem('isReadAloud', isReadAloud.toString());
+  }, [isReadAloud]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -227,6 +247,198 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
     return null;
   };
 
+  const envGeminiModels = (import.meta as any).env.VITE_GEMINI_MODELS;
+  const GEMINI_MODELS = envGeminiModels ? envGeminiModels.split(',').map((m: string) => m.trim()) : ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash-preview-12-2025"];
+  const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (process as any).env.GEMINI_API_KEY;
+  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
+
+  const stopAudio = () => {
+    isStoppingRef.current = true;
+    if (currentAudioRef.current) {
+      try {
+        const { source, context, startTime } = currentAudioRef.current;
+        if (source) {
+          currentAudioRef.current.offset += context.currentTime - startTime;
+          source.stop();
+        }
+      } catch (e) {
+        console.warn('Audio stop warning:', e);
+      }
+      setCurrentPlayingId(null);
+    }
+    setTimeout(() => { isStoppingRef.current = false; }, 100);
+  };
+
+  const splitIntoSentences = (text: string): string[] => {
+    const cleanText = text
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+      .replace(/!\[[^\]]*\]\([^\)]+\)/g, '')
+      .replace(/[*_#`\\]/g, '')
+      .replace(/https?:\/\/\b(?!ua\.pt)\S+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanText) return [];
+
+    const sentenceEndings = /[.!?]+(\s+|$)/g;
+    let sentences: string[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = sentenceEndings.exec(cleanText)) !== null) {
+      sentences.push(cleanText.substring(lastIndex, match.index + match[0].trim().length).trim());
+      lastIndex = sentenceEndings.lastIndex;
+    }
+
+    if (lastIndex < cleanText.length) {
+      sentences.push(cleanText.substring(lastIndex).trim());
+    }
+    
+    return sentences.filter(s => s.length > 0);
+  };
+
+  const handleTTS = async (messageId: string, text: string, lang: string = language, force: boolean = false) => {
+    console.log(`Starting TTS for ${messageId}, lang: ${lang}, force: ${force}`);
+    
+    if (currentAudioRef.current?.messageId === messageId && currentPlayingId === messageId) {
+      stopAudio();
+      if (currentAudioRef.current) currentAudioRef.current.source = null as any; 
+      return;
+    }
+
+    if ((!isReadAloud && !force) || !text) return;
+
+    if (currentAudioRef.current && currentAudioRef.current.messageId !== messageId) {
+      stopAudio();
+      currentAudioRef.current = null;
+    }
+
+    const sentences = splitIntoSentences(text);
+    if (sentences.length === 0) return;
+
+    let buffers = audioBufferCache.current.get(messageId) || [];
+    const audioContext = (currentAudioRef.current?.context) || new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+
+    const startIdx = currentAudioRef.current?.messageId === messageId ? currentAudioRef.current.sentenceIndex : 0;
+    const initialOffset = currentAudioRef.current?.messageId === messageId ? currentAudioRef.current.offset : 0;
+
+    const fetchAndPlay = async (idx: number, seekOffset: number = 0) => {
+      if (idx >= sentences.length || isStoppingRef.current) {
+        setCurrentPlayingId(null);
+        currentAudioRef.current = null;
+        return;
+      }
+
+      try {
+        let buffer = buffers[idx];
+
+        if (!buffer) {
+          const sentence = sentences[idx];
+          const ttsPrompt = lang === 'PT' 
+            ? `In European Portuguese, with a sweet and cheerful female voice, say: ${sentence}`
+            : `With a sweet and cheerful female voice, say: ${sentence}`;
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.1-flash-tts-preview",
+            contents: [{ parts: [{ text: ttsPrompt }] }],
+            config: {
+              responseModalities: [Modality.AUDIO],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: 'Kore' },
+                },
+              },
+            },
+          });
+
+          const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          if (!base64Audio) {
+            console.error(`No audio for sentence ${idx}`);
+            fetchAndPlay(idx + 1);
+            return;
+          }
+
+          const binaryString = atob(base64Audio);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+          
+          buffer = audioContext.createBuffer(1, len / 2, 24000);
+          const channelData = buffer.getChannelData(0);
+          const dataView = new DataView(bytes.buffer);
+          for (let i = 0; i < len / 2; i++) {
+            channelData[i] = dataView.getInt16(i * 2, true) / 32768;
+          }
+          
+          buffers[idx] = buffer;
+          audioBufferCache.current.set(messageId, buffers);
+        }
+
+        if (idx + 1 < sentences.length && !buffers[idx + 1]) {
+          (async () => {
+            try {
+              const sentence = sentences[idx+1];
+              const prompt = lang === 'PT' 
+                ? `In European Portuguese, with a sweet and cheerful female voice, say: ${sentence}`
+                : `With a sweet and cheerful female voice, say: ${sentence}`;
+              const resp = await ai.models.generateContent({
+                model: "gemini-3.1-flash-tts-preview",
+                contents: [{ parts: [{ text: prompt }] }],
+                config: {
+                  responseModalities: [Modality.AUDIO],
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+                },
+              });
+              const b64 = resp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+              if (b64) {
+                const bStr = atob(b64);
+                const bs = new Uint8Array(bStr.length);
+                for (let i = 0; i < bStr.length; i++) bs[i] = bStr.charCodeAt(i);
+                const b = audioContext.createBuffer(1, bStr.length / 2, 24000);
+                const cd = b.getChannelData(0);
+                const dv = new DataView(bs.buffer);
+                for (let i = 0; i < bStr.length / 2; i++) cd[i] = dv.getInt16(i * 2, true) / 32768;
+                buffers[idx+1] = b;
+                audioBufferCache.current.set(messageId, buffers);
+              }
+            } catch (e) { console.warn('Pre-fetch failed', e); }
+          })();
+        }
+
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+
+        source.onended = () => {
+          if (currentAudioRef.current?.source === source && !isStoppingRef.current) {
+            fetchAndPlay(idx + 1);
+          }
+        };
+
+        const finalOffset = seekOffset % buffer.duration;
+        source.start(0, finalOffset);
+        setCurrentPlayingId(messageId);
+        currentAudioRef.current = {
+          source,
+          context: audioContext,
+          startTime: audioContext.currentTime,
+          offset: finalOffset,
+          messageId,
+          sentenceIndex: idx
+        };
+      } catch (err) {
+        console.error('TTS Play Error:', err);
+        fetchAndPlay(idx + 1);
+      }
+    };
+
+    fetchAndPlay(startIdx, initialOffset);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -350,11 +562,6 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
     const isToolRelatedQuery = (intent: string) => {
       return ["getLibraryOccupancy", "searchOPAC", "searchScopus", "getLibraryEvents", "getWeather"].includes(intent);
     };
-
-    const envGeminiModels = (import.meta as any).env.VITE_GEMINI_MODELS;
-    const GEMINI_MODELS = envGeminiModels ? envGeminiModels.split(',').map((m: string) => m.trim()) : ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash-preview-12-2025"];
-    const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (process as any).env.GEMINI_API_KEY;
-    const ai = new GoogleGenAI({ apiKey });
 
     try {
       // 1. Intent Interpretation (Orchestration)
@@ -596,6 +803,11 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
           : msg
       ));
 
+      // Trigger TTS if enabled
+      if (finalResponseText) {
+        handleTTS(assistantMessageId, finalResponseText, detectedLanguage || language);
+      }
+
     } catch (err: any) {
       console.error('Chat Error:', err);
       setMessages(prev => prev.map(msg => 
@@ -701,6 +913,17 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
               </button>
             </div>
             <button
+              onClick={() => {
+                const newValue = !isReadAloud;
+                setIsReadAloud(newValue);
+                if (!newValue) stopAudio();
+              }}
+              className={`p-2 rounded-xl transition-colors ${isReadAloud ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+              title={isReadAloud ? (language === 'PT' ? "Silenciar" : "Mute") : (language === 'PT' ? "Ativar leitura" : "Read Aloud")}
+            >
+              {isReadAloud ? <Volume2 size={20} /> : <VolumeOff size={20} />}
+            </button>
+            <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl transition-colors"
               title={isDarkMode ? "Modo claro" : "Modo escuro"}
@@ -779,40 +1002,59 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
                       )}
                     </div>
                     <div className={`space-y-1.5 ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      <div className={`p-5 rounded-2xl shadow-sm text-sm leading-relaxed ${
-                        message.role === 'user' 
-                          ? 'bg-emerald-600 text-white rounded-tr-none' 
-                          : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-black/5 dark:border-white/10 rounded-tl-none'
-                      }`}>
-                        <div className="prose prose-sm max-w-none prose-emerald dark:prose-invert">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              a: ({ node, ...props }) => (
-                                <a 
-                                  {...props} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="text-blue-600 dark:text-blue-400 hover:underline font-medium transition-colors"
-                                />
-                              ),
-                              img: ({ node, ...props }) => (
-                                <img 
-                                  {...props} 
-                                  className="rounded-xl shadow-md border border-black/5 dark:border-white/10 max-h-[400px] object-contain my-4"
-                                  referrerPolicy="no-referrer"
-                                />
-                              )
-                            }}
-                          >
-                            {message.content}
-                          </ReactMarkdown>
-                        </div>
-                        {message.content === '' && isLoading && (
-                          <div className="flex items-center gap-2 text-emerald-500">
-                            <Loader2 size={18} className="animate-spin" />
-                            <span className="text-xs font-medium">{t.consulting}</span>
+                      <div className={`flex items-start gap-2 ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <div className={`p-5 rounded-2xl shadow-sm text-sm leading-relaxed ${
+                          message.role === 'user' 
+                            ? 'bg-emerald-600 text-white rounded-tr-none' 
+                            : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-black/5 dark:border-white/10 rounded-tl-none'
+                        }`}>
+                          <div className="prose prose-sm max-w-none prose-emerald dark:prose-invert">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                a: ({ node, ...props }) => (
+                                  <a 
+                                    {...props} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-blue-600 dark:text-blue-400 hover:underline font-medium transition-colors"
+                                  />
+                                ),
+                                img: ({ node, ...props }) => (
+                                  <img 
+                                    {...props} 
+                                    className="rounded-xl shadow-md border border-black/5 dark:border-white/10 max-h-[400px] object-contain my-4"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                )
+                              }}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
                           </div>
+                          {message.content === '' && isLoading && (
+                            <div className="flex items-center gap-2 text-emerald-500">
+                              <Loader2 size={18} className="animate-spin" />
+                              <span className="text-xs font-medium">{t.consulting}</span>
+                            </div>
+                          )}
+                        </div>
+                        {message.role === 'assistant' && message.content !== '' && (
+                          <button 
+                            onClick={() => handleTTS(message.id, message.content, language, true)}
+                            className={`p-2 mt-2 rounded-xl transition-colors shrink-0 ${
+                              currentPlayingId === message.id 
+                                ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' 
+                                : 'text-gray-400 hover:text-emerald-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            }`}
+                            title={language === 'PT' ? (currentPlayingId === message.id ? "Pausar leitura" : "Ouvir resposta") : (currentPlayingId === message.id ? "Pause" : "Listen to response")}
+                          >
+                            {currentPlayingId === message.id ? <div className="flex gap-0.5 items-end h-4 pb-0.5 px-0.5">
+                              <motion.div animate={{ height: [4, 12, 4] }} transition={{ repeat: Infinity, duration: 0.6 }} className="w-1 bg-current rounded-full" />
+                              <motion.div animate={{ height: [8, 4, 8] }} transition={{ repeat: Infinity, duration: 0.8 }} className="w-1 bg-current rounded-full" />
+                              <motion.div animate={{ height: [4, 10, 4] }} transition={{ repeat: Infinity, duration: 0.7 }} className="w-1 bg-current rounded-full" />
+                            </div> : <Volume2 size={18} />}
+                          </button>
                         )}
                       </div>
                       <span className="text-[10px] text-gray-400 px-1">
