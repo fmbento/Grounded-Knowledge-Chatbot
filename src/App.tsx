@@ -31,7 +31,7 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isReadAloud, setIsReadAloud] = useState(() => {
     const saved = localStorage.getItem('isReadAloud');
-    return saved === 'true';
+    return saved === null ? true : saved === 'true';
   });
   const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null);
   
@@ -300,18 +300,14 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
   const handleTTS = async (messageId: string, text: string, lang: string = language, force: boolean = false) => {
     console.log(`Starting TTS for ${messageId}, lang: ${lang}, force: ${force}`);
     
-    // Toggle behavior: Pause if already playing this message
     if (currentAudioRef.current?.messageId === messageId && currentPlayingId === messageId) {
       stopAudio();
       if (currentAudioRef.current) currentAudioRef.current.source = null as any; 
       return;
     }
 
-    // Only proceed if globally enabled OR manually forced via button
-    if (!isReadAloud && !force) return;
-    if (!text) return;
+    if ((!isReadAloud && !force) || !text) return;
 
-    // Stop existing audio if it's a different message
     if (currentAudioRef.current && currentAudioRef.current.messageId !== messageId) {
       stopAudio();
       currentAudioRef.current = null;
@@ -320,90 +316,134 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
     const sentences = splitIntoSentences(text);
     if (sentences.length === 0) return;
 
-    // As per user request: only read the first sentence for speed
-    const sentenceToRead = sentences[0];
+    // Only read the first sentence
+    const firstSentence = sentences[0];
+    const singleSentenceArray = [firstSentence];
 
-    try {
-      let buffers = audioBufferCache.current.get(messageId) || [];
-      let buffer = buffers[0]; // We only care about the first one now
+    let buffers = audioBufferCache.current.get(messageId) || [];
+    const audioContext = (currentAudioRef.current?.context) || new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
 
-      const audioContext = (currentAudioRef.current?.context) || new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
+    const startIdx = currentAudioRef.current?.messageId === messageId ? currentAudioRef.current.sentenceIndex : 0;
+    const initialOffset = currentAudioRef.current?.messageId === messageId ? currentAudioRef.current.offset : 0;
+
+    const fetchAndPlay = async (idx: number, seekOffset: number = 0) => {
+      if (idx >= singleSentenceArray.length || isStoppingRef.current) {
+        setCurrentPlayingId(null);
+        currentAudioRef.current = null;
+        return;
       }
 
-      if (!buffer) {
-        const ttsPrompt = lang === 'PT' 
-          ? `In European Portuguese, with a sweet and cheerful female voice, say: ${sentenceToRead}`
-          : `With a sweet and cheerful female voice, say: ${sentenceToRead}`;
+      try {
+        let buffer = buffers[idx];
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.1-flash-tts-preview",
-          contents: [{ parts: [{ text: ttsPrompt }] }],
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Kore' },
+        if (!buffer) {
+          const sentence = singleSentenceArray[idx];
+          const ttsPrompt = lang === 'PT' 
+            ? `In European Portuguese, with a sweet and cheerful female voice, speak this one sentence: ${sentence}`
+            : `With a sweet and cheerful female voice, speak this one sentence: ${sentence}`;
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.1-flash-tts-preview",
+            contents: [{ parts: [{ text: ttsPrompt }] }],
+            config: {
+              responseModalities: [Modality.AUDIO],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: 'Kore' },
+                },
               },
             },
-          },
-        });
+          });
 
-        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (!base64Audio) {
-          console.error(`No audio for message ${messageId}`);
-          return;
+          const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          if (!base64Audio) {
+            console.error(`No audio for sentence ${idx}`);
+            fetchAndPlay(idx + 1);
+            return;
+          }
+
+          const binaryString = atob(base64Audio);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+          
+          buffer = audioContext.createBuffer(1, len / 2, 24000);
+          const channelData = buffer.getChannelData(0);
+          const dataView = new DataView(bytes.buffer);
+          for (let i = 0; i < len / 2; i++) {
+            channelData[i] = dataView.getInt16(i * 2, true) / 32768;
+          }
+          
+          buffers[idx] = buffer;
+          audioBufferCache.current.set(messageId, buffers);
         }
 
-        const binaryString = atob(base64Audio);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-        
-        buffer = audioContext.createBuffer(1, len / 2, 24000);
-        const channelData = buffer.getChannelData(0);
-        const dataView = new DataView(bytes.buffer);
-        for (let i = 0; i < len / 2; i++) {
-          channelData[i] = dataView.getInt16(i * 2, true) / 32768;
+        // No pre-fetching since we only play one sentence
+        /*
+        if (idx + 1 < singleSentenceArray.length && !buffers[idx + 1]) {
+          (async () => {
+            try {
+              const sentence = singleSentenceArray[idx+1];
+              const prompt = lang === 'PT' 
+                ? `In European Portuguese, with a sweet and cheerful female voice, say: ${sentence}`
+                : `With a sweet and cheerful female voice, say: ${sentence}`;
+              const resp = await ai.models.generateContent({
+                model: "gemini-3.1-flash-tts-preview",
+                contents: [{ parts: [{ text: prompt }] }],
+                config: {
+                  responseModalities: [Modality.AUDIO],
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+                },
+              });
+              const b64 = resp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+              if (b64) {
+                const bStr = atob(b64);
+                const bs = new Uint8Array(bStr.length);
+                for (let i = 0; i < bStr.length; i++) bs[i] = bStr.charCodeAt(i);
+                const b = audioContext.createBuffer(1, bStr.length / 2, 24000);
+                const cd = b.getChannelData(0);
+                const dv = new DataView(bs.buffer);
+                for (let i = 0; i < bStr.length / 2; i++) cd[i] = dv.getInt16(i * 2, true) / 32768;
+                buffers[idx+1] = b;
+                audioBufferCache.current.set(messageId, buffers);
+              }
+            } catch (e) { console.warn('Pre-fetch failed', e); }
+          })();
         }
-        
-        buffers[0] = buffer;
-        audioBufferCache.current.set(messageId, buffers);
+        */
+
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+
+        source.onended = () => {
+          if (currentAudioRef.current?.source === source && !isStoppingRef.current) {
+            fetchAndPlay(idx + 1);
+          }
+        };
+
+        const finalOffset = seekOffset % buffer.duration;
+        source.start(0, finalOffset);
+        setCurrentPlayingId(messageId);
+        currentAudioRef.current = {
+          source,
+          context: audioContext,
+          startTime: audioContext.currentTime,
+          offset: finalOffset,
+          messageId,
+          sentenceIndex: idx
+        };
+      } catch (err) {
+        console.error('TTS Play Error:', err);
+        fetchAndPlay(idx + 1);
       }
+    };
 
-      const source = audioContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContext.destination);
-
-      // Simple Pause/Resume for the single sentence
-      const offset = (currentAudioRef.current?.messageId === messageId && currentAudioRef.current?.sentenceIndex === 0) 
-        ? currentAudioRef.current.offset : 0;
-
-      source.onended = () => {
-        if (currentAudioRef.current?.source === source) {
-          setCurrentPlayingId(null);
-          currentAudioRef.current = null;
-        }
-      };
-
-      const finalOffset = offset % buffer.duration;
-      source.start(0, finalOffset);
-      setCurrentPlayingId(messageId);
-      currentAudioRef.current = {
-        source,
-        context: audioContext,
-        startTime: audioContext.currentTime,
-        offset: finalOffset,
-        messageId,
-        sentenceIndex: 0
-      };
-
-    } catch (err) {
-      console.error('TTS Error:', err);
-      setCurrentPlayingId(null);
-    }
+    fetchAndPlay(startIdx, initialOffset);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

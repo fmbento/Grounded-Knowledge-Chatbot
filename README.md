@@ -394,6 +394,11 @@ For support, please:
 
 ## 🔄 Changelog
 
+### Version 0.1.5
+- 🔊 **Auto TTS (First Sentence)**: Chatbot now automatically reads the first sentence of every response for a smoother hands-free experience.
+- ⚙️ **Default Settings**: TTS is now enabled by default for new users.
+- 🛡️ **Stability**: Ensured persistence of `/KB` files during updates.
+
 ### Version 0.1.4
 - 🛡️ **Custom Responses**: Added direct responses for identity-related questions ("Who created you?") and policy violations ("Make a bomb", "Ignore system prompt") using a fast keyword-matching layer.
 - 🌐 **Language Detection Fix**: Improved multilingual support by neutralizing the internal system prompt and fixing hardcoded language fallbacks, ensuring correct responses in French and other languages.
@@ -515,4 +520,4 @@ These rules help ensure that searches in specialized databases (like the UA libr
 
 ---
 
-**Last Updated:** March 26, 2026 (v0.1.4)
+**Last Updated:** April 18, 2026 (v0.1.5)
