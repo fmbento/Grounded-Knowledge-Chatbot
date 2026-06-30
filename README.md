@@ -394,6 +394,12 @@ For support, please:
 
 ## 🔄 Changelog
 
+### Version 0.1.6 (Salina v5.1)
+- 🔊 **Enhanced Auto TTS (Dynamic Paragraphs)**: Automatically reads aloud the first complete paragraph sentence-by-sentence. If the first paragraph consists of only one sentence, it automatically continues through the second paragraph as well for a natural spoken summary.
+- 📜 **Smart Scrolling Prevention**: When displaying long replies, the browser window preserves the top of the message in the viewport instead of scrolling past it to the very bottom, keeping the beginning of the text readable.
+- ⬇️ **Page-by-Page Navigation Arrow**: Added a subtle, floating page-scroll indicator button (`ScrollPageButton`) to the right of assistant responses. Each click smoothly advances the chat container by one page height, facilitating keyboard-free scrolling.
+- ⚡ **Robust Academic Search (Scopus API)**: Improved Scopus proxy resilience using Axios, preventing premature connection closures and providing more descriptive error responses on request failure.
+
 ### Version 0.1.5
 - 🔊 **Auto TTS (First Sentence)**: Chatbot now automatically reads the first sentence of every response for a smoother hands-free experience.
 - ⚙️ **Default Settings**: TTS is now enabled by default for new users.
@@ -520,4 +526,4 @@ These rules help ensure that searches in specialized databases (like the UA libr
 
 ---
 
-**Last Updated:** April 18, 2026 (v0.1.5)
+**Last Updated:** June 30, 2026 (v0.1.6 / Salina v5.1)

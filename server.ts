@@ -9,6 +9,7 @@ import { createRequire } from 'module';
 import { GoogleGenAI } from "@google/genai";
 import fetch from 'node-fetch';
 import FormData from 'form-data';
+import axios from 'axios';
 
 const require = createRequire(import.meta.url);
 const pdf = require('pdf-parse');
@@ -71,18 +72,11 @@ async function startServer() {
     const fullResultsUrl = `https://www.scopus.com/results/results.uri?sort=rel-f&src=s&sid=&sot=b&sdt=b&sl=16&s=${encodedQuery}%23`;
 
     try {
-      const response = await fetch(apiUrl, {
+      const response = await axios.get(apiUrl, {
         headers: { Accept: "application/json" }
       });
 
-      if (!response.ok) {
-        return res.status(response.status).json({
-          error: `HTTP error: ${response.status} ${response.statusText}`,
-          fullResultsUrl: fullResultsUrl
-        });
-      }
-
-      const data = await response.json();
+      const data = response.data;
       const results = data["search-results"]?.entry || [];
       const totalResults = data["search-results"]?.["opensearch:totalResults"] || "0";
 
@@ -111,7 +105,13 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("Error fetching Scopus search:", error);
-      res.status(500).json({ error: 'Failed to fetch Scopus results', details: error.message, fullResultsUrl });
+      const status = error.response?.status || 500;
+      const details = error.response?.data || error.message;
+      res.status(status).json({ 
+        error: 'Failed to fetch Scopus results', 
+        details: typeof details === 'object' ? JSON.stringify(details) : details, 
+        fullResultsUrl 
+      });
     }
   });
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info, Book, Clock, Image, Database, Globe, Moon, Sun, Volume2, VolumeOff } from 'lucide-react';
+import { Send, Bot, User, Loader2, Trash2, FileText, Upload, X, CheckCircle2, AlertCircle, Info, Book, Clock, Image, Database, Globe, Moon, Sun, Volume2, VolumeOff, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -20,6 +20,59 @@ interface KBFile {
   type: string;
   downloadUrl: string;
 }
+
+const ScrollPageButton = ({ messageId, containerRef, messageRefs }: { messageId: string, containerRef: React.RefObject<HTMLDivElement | null>, messageRefs: React.RefObject<Map<string, HTMLDivElement>> }) => {
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const checkVisibility = () => {
+      const container = containerRef.current;
+      const messageEl = messageRefs.current.get(messageId);
+      if (!container || !messageEl) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const messageRect = messageEl.getBoundingClientRect();
+      
+      // If message bottom is below container bottom, show the button
+      // We add a small buffer (20px)
+      setShow(messageRect.bottom > containerRect.bottom + 20);
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('scroll', checkVisibility);
+      window.addEventListener('resize', checkVisibility);
+      
+      // Check periodically as content might grow during generation
+      const interval = setInterval(checkVisibility, 1000);
+      
+      checkVisibility();
+      return () => {
+        container.removeEventListener('scroll', checkVisibility);
+        window.removeEventListener('resize', checkVisibility);
+        clearInterval(interval);
+      };
+    }
+  }, [messageId, containerRef, messageRefs]);
+
+  if (!show) return null;
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        if (containerRef.current) {
+          const scrollAmount = containerRef.current.clientHeight * 0.8;
+          containerRef.current.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+        }
+      }}
+      className="p-2 mt-2 rounded-xl bg-white dark:bg-gray-800 border border-black/5 dark:border-white/10 text-emerald-600 dark:text-emerald-400 shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shrink-0 self-center animate-bounce"
+      title="Avançar uma página"
+    >
+      <ChevronDown size={18} />
+    </button>
+  );
+};
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -98,15 +151,38 @@ export default function App() {
   const t = translations[language];
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const kbInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Scroll to bottom only when user sends a message
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === 'user') {
+        scrollToBottom();
+      }
+    }
+  }, [messages.length]);
+
+  // Scroll to TOP of assistant response when it's shown/finished
+  useEffect(() => {
+    if (!isLoading && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === 'assistant') {
+        setTimeout(() => {
+          const el = messageRefs.current.get(lastMessage.id);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 100);
+      }
+    }
+  }, [isLoading]);
 
   useEffect(() => {
     const fetchKbFiles = async () => {
@@ -313,12 +389,21 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
       currentAudioRef.current = null;
     }
 
-    const sentences = splitIntoSentences(text);
-    if (sentences.length === 0) return;
+    // Split text into paragraphs using double newlines
+    const paragraphs = text.split(/\r?\n\s*\r?\n/).map(p => p.trim()).filter(p => p.length > 0);
+    
+    let ttsSentences: string[] = [];
+    if (paragraphs.length > 0) {
+      const firstParagraphSentences = splitIntoSentences(paragraphs[0]);
+      if (firstParagraphSentences.length <= 1 && paragraphs.length > 1) {
+        const secondParagraphSentences = splitIntoSentences(paragraphs[1]);
+        ttsSentences = [...firstParagraphSentences, ...secondParagraphSentences];
+      } else {
+        ttsSentences = firstParagraphSentences;
+      }
+    }
 
-    // Only read the first sentence
-    const firstSentence = sentences[0];
-    const singleSentenceArray = [firstSentence];
+    if (ttsSentences.length === 0) return;
 
     let buffers = audioBufferCache.current.get(messageId) || [];
     const audioContext = (currentAudioRef.current?.context) || new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -331,7 +416,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
     const initialOffset = currentAudioRef.current?.messageId === messageId ? currentAudioRef.current.offset : 0;
 
     const fetchAndPlay = async (idx: number, seekOffset: number = 0) => {
-      if (idx >= singleSentenceArray.length || isStoppingRef.current) {
+      if (idx >= ttsSentences.length || isStoppingRef.current) {
         setCurrentPlayingId(null);
         currentAudioRef.current = null;
         return;
@@ -341,7 +426,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
         let buffer = buffers[idx];
 
         if (!buffer) {
-          const sentence = singleSentenceArray[idx];
+          const sentence = ttsSentences[idx];
           const ttsPrompt = lang === 'PT' 
             ? `In European Portuguese, with a sweet and cheerful female voice, speak this one sentence: ${sentence}`
             : `With a sweet and cheerful female voice, speak this one sentence: ${sentence}`;
@@ -382,12 +467,12 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
           audioBufferCache.current.set(messageId, buffers);
         }
 
-        // No pre-fetching since we only play one sentence
+        // No pre-fetching since we only play two sentences
         /*
-        if (idx + 1 < singleSentenceArray.length && !buffers[idx + 1]) {
+        if (idx + 1 < ttsSentences.length && !buffers[idx + 1]) {
           (async () => {
             try {
-              const sentence = singleSentenceArray[idx+1];
+              const sentence = ttsSentences[idx+1];
               const prompt = lang === 'PT' 
                 ? `In European Portuguese, with a sweet and cheerful female voice, say: ${sentence}`
                 : `With a sweet and cheerful female voice, say: ${sentence}`;
@@ -899,7 +984,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
                   rel="noopener noreferrer"
                   className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest hover:underline block"
                 >
-                  Assistente IA das Bibliotecas UA v5.0
+                  Assistente IA das Bibliotecas UA v5.1
                 </a>
               </div>
             </div>
@@ -948,7 +1033,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
         </header>
 
         {/* Chat Area */}
-        <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        <main ref={mainContainerRef} className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-6">
@@ -989,6 +1074,10 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
               {messages.map((message) => (
                 <motion.div
                   key={message.id}
+                  ref={(el) => {
+                    if (el) messageRefs.current.set(message.id, el);
+                    else messageRefs.current.delete(message.id);
+                  }}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -1062,6 +1151,13 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
                               <motion.div animate={{ height: [4, 10, 4] }} transition={{ repeat: Infinity, duration: 0.7 }} className="w-1 bg-current rounded-full" />
                             </div> : <Volume2 size={18} />}
                           </button>
+                        )}
+                        {message.role === 'assistant' && message.content !== '' && (
+                          <ScrollPageButton 
+                            messageId={message.id} 
+                            containerRef={mainContainerRef} 
+                            messageRefs={messageRefs} 
+                          />
                         )}
                       </div>
                       <span className="text-[10px] text-gray-400 px-1">
