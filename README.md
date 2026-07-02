@@ -394,6 +394,12 @@ For support, please:
 
 ## 🔄 Changelog
 
+### Version 0.1.8 (Salina v5.3)
+- 👩‍💼 **Professional Librarian TTS Voice**: Updated Salina's voice configuration to a warm, calm, clear, and professional female librarian voice (`Zephyr`). Explicitly tuned the generation instructions to use perfect European Portuguese (Portugal accent / PT-PT) and absolutely never Brazilian Portuguese, providing a consistent, elegant, and academic user experience.
+
+### Version 0.1.7 (Salina v5.2)
+- 👋 **Smart Daily Greetings**: Salina now only greets the user (e.g. "Olá", "Bom dia", "Boa tarde", "Boa noite") on the very first response of the day for each user. Subsequent answers on the same day start directly answering the question without repetitive or redundant greetings.
+
 ### Version 0.1.6 (Salina v5.1)
 - 🔊 **Enhanced Auto TTS (Dynamic Paragraphs)**: Automatically reads aloud the first complete paragraph sentence-by-sentence. If the first paragraph consists of only one sentence, it automatically continues through the second paragraph as well for a natural spoken summary.
 - 📜 **Smart Scrolling Prevention**: When displaying long replies, the browser window preserves the top of the message in the viewport instead of scrolling past it to the very bottom, keeping the beginning of the text readable.
@@ -526,4 +532,4 @@ These rules help ensure that searches in specialized databases (like the UA libr
 
 ---
 
-**Last Updated:** June 30, 2026 (v0.1.6 / Salina v5.1)
+**Last Updated:** July 2, 2026 (v0.1.8 / Salina v5.3)

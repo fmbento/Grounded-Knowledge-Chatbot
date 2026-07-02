@@ -428,8 +428,8 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
         if (!buffer) {
           const sentence = ttsSentences[idx];
           const ttsPrompt = lang === 'PT' 
-            ? `In European Portuguese, with a sweet and cheerful female voice, speak this one sentence: ${sentence}`
-            : `With a sweet and cheerful female voice, speak this one sentence: ${sentence}`;
+            ? `In perfect European Portuguese (with a distinct Portugal accent), with a warm, calm, clear, and professional female librarian voice, absolutely NEVER in Brazilian Portuguese, speak this sentence: ${sentence}`
+            : `With a warm, calm, clear, and professional female voice with a gentle European Portuguese accent, speak this sentence: ${sentence}`;
 
           const response = await ai.models.generateContent({
             model: "gemini-3.1-flash-tts-preview",
@@ -438,7 +438,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
               responseModalities: [Modality.AUDIO],
               speechConfig: {
                 voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: 'Kore' },
+                  prebuiltVoiceConfig: { voiceName: 'Zephyr' },
                 },
               },
             },
@@ -474,14 +474,14 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
             try {
               const sentence = ttsSentences[idx+1];
               const prompt = lang === 'PT' 
-                ? `In European Portuguese, with a sweet and cheerful female voice, say: ${sentence}`
-                : `With a sweet and cheerful female voice, say: ${sentence}`;
+                ? `In perfect European Portuguese (with a distinct Portugal accent), with a warm, calm, clear, and professional female librarian voice, absolutely NEVER in Brazilian Portuguese, say: ${sentence}`
+                : `With a warm, calm, clear, and professional female voice with a gentle European Portuguese accent, say: ${sentence}`;
               const resp = await ai.models.generateContent({
                 model: "gemini-3.1-flash-tts-preview",
                 contents: [{ parts: [{ text: prompt }] }],
                 config: {
                   responseModalities: [Modality.AUDIO],
-                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
                 },
               });
               const b64 = resp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -780,6 +780,10 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
       }
       console.log(`Context found: ${context.length} chars`);
 
+      const lastGreetingDate = localStorage.getItem('lastGreetingDate');
+      const todayStr = new Date().toLocaleDateString('en-CA');
+      const hasBeenGreetedToday = lastGreetingDate === todayStr;
+
       // 3. Final Generation
       const finalSystemPrompt = `
         You are Salina, the Virtual Assistant of the University of Aveiro Libraries.
@@ -791,6 +795,12 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
         STRICT INSTRUCTION: ${detectedLanguage === 'AUTO' 
           ? "Respond in the same language as the user's query (e.g., if they ask in French, respond in French)." 
           : `Respond in the detected language: ${detectedLanguage.toUpperCase()}.`}
+        
+        GREETING RULES:
+        ${hasBeenGreetedToday 
+          ? "CRITICAL: The user has already been greeted today. You MUST NOT start this response with any greetings (such as 'Olá', 'Bom dia', 'Boa tarde', 'Boa noite', 'Olá!', 'Hello', 'Good morning', etc.). Start directly answering the user's question, without any initial greeting or introductory remarks of greeting." 
+          : "This is the user's first interaction of the day. You should start with a polite, brief greeting (e.g., 'Olá!', 'Bom dia!', 'Boa tarde!', or 'Boa noite!' depending on the current time of day: morning is until 12:00, afternoon is until 20:00, night is after 20:00) before proceeding to answer."
+        }
         
         FORMATTING AND CITATION RULES:
         1. If using information from the Knowledge Base, cite the URL or PDF link.
@@ -897,6 +907,8 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
 
       // Trigger TTS if enabled
       if (finalResponseText) {
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        localStorage.setItem('lastGreetingDate', todayStr);
         handleTTS(assistantMessageId, finalResponseText, detectedLanguage || language);
       }
 
@@ -984,7 +996,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
                   rel="noopener noreferrer"
                   className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest hover:underline block"
                 >
-                  Assistente IA das Bibliotecas UA v5.1
+                  Assistente IA das Bibliotecas UA v5.3
                 </a>
               </div>
             </div>
