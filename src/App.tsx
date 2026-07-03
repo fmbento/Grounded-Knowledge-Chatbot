@@ -990,7 +990,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
                   rel="noopener noreferrer"
                   className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest hover:underline block"
                 >
-                  Assistente IA das Bibliotecas UA v5.4
+                  Assistente IA das Bibliotecas UA v5.1.5
                 </a>
               </div>
             </div>

@@ -394,7 +394,7 @@ For support, please:
 
 ## 🔄 Changelog
 
-### Version 0.1.9 (Salina v5.4)
+### Version 0.1.9 (Salina v5.1.5)
 - ⚡ **Ultra-Low Latency Parallel TTS**: Introduced concurrent sentence pre-fetching. Salina now requests audio buffers for both the first and second sentences in parallel as soon as the response is prepared. This eliminates the delay before sentences begin and ensures completely seamless, zero-gap transitions between spoken sentences.
 
 ### Version 0.1.8 (Salina v5.3)
@@ -535,4 +535,4 @@ These rules help ensure that searches in specialized databases (like the UA libr
 
 ---
 
-**Last Updated:** July 3, 2026 (v0.1.9 / Salina v5.4)
+**Last Updated:** July 3, 2026 (v0.1.9 / Salina v5.1.5)
