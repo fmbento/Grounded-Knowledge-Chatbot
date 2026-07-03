@@ -415,6 +415,56 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
     const startIdx = currentAudioRef.current?.messageId === messageId ? currentAudioRef.current.sentenceIndex : 0;
     const initialOffset = currentAudioRef.current?.messageId === messageId ? currentAudioRef.current.offset : 0;
 
+    const fetchSentenceAudio = async (idx: number): Promise<AudioBuffer | null> => {
+      if (idx >= ttsSentences.length) return null;
+      if (buffers[idx]) return buffers[idx];
+
+      const sentence = ttsSentences[idx];
+      const ttsPrompt = lang === 'PT' 
+        ? `In perfect European Portuguese (with a distinct Portugal accent), with a warm, calm, clear, and professional female librarian voice, absolutely NEVER in Brazilian Portuguese, speak this sentence: ${sentence}`
+        : `With a warm, calm, clear, and professional female voice with a gentle European Portuguese accent, speak this sentence: ${sentence}`;
+
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-tts-preview",
+          contents: [{ parts: [{ text: ttsPrompt }] }],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: 'Zephyr' },
+              },
+            },
+          },
+        });
+
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (!base64Audio) {
+          console.error(`No audio for sentence ${idx}`);
+          return null;
+        }
+
+        const binaryString = atob(base64Audio);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+        
+        const buffer = audioContext.createBuffer(1, len / 2, 24000);
+        const channelData = buffer.getChannelData(0);
+        const dataView = new DataView(bytes.buffer);
+        for (let i = 0; i < len / 2; i++) {
+          channelData[i] = dataView.getInt16(i * 2, true) / 32768;
+        }
+        
+        buffers[idx] = buffer;
+        audioBufferCache.current.set(messageId, buffers);
+        return buffer;
+      } catch (e) {
+        console.error(`Error fetching sentence ${idx}:`, e);
+        return null;
+      }
+    };
+
     const fetchAndPlay = async (idx: number, seekOffset: number = 0) => {
       if (idx >= ttsSentences.length || isStoppingRef.current) {
         setCurrentPlayingId(null);
@@ -426,80 +476,18 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
         let buffer = buffers[idx];
 
         if (!buffer) {
-          const sentence = ttsSentences[idx];
-          const ttsPrompt = lang === 'PT' 
-            ? `In perfect European Portuguese (with a distinct Portugal accent), with a warm, calm, clear, and professional female librarian voice, absolutely NEVER in Brazilian Portuguese, speak this sentence: ${sentence}`
-            : `With a warm, calm, clear, and professional female voice with a gentle European Portuguese accent, speak this sentence: ${sentence}`;
-
-          const response = await ai.models.generateContent({
-            model: "gemini-3.1-flash-tts-preview",
-            contents: [{ parts: [{ text: ttsPrompt }] }],
-            config: {
-              responseModalities: [Modality.AUDIO],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-                },
-              },
-            },
-          });
-
-          const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-          if (!base64Audio) {
-            console.error(`No audio for sentence ${idx}`);
-            fetchAndPlay(idx + 1);
-            return;
-          }
-
-          const binaryString = atob(base64Audio);
-          const len = binaryString.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-          
-          buffer = audioContext.createBuffer(1, len / 2, 24000);
-          const channelData = buffer.getChannelData(0);
-          const dataView = new DataView(bytes.buffer);
-          for (let i = 0; i < len / 2; i++) {
-            channelData[i] = dataView.getInt16(i * 2, true) / 32768;
-          }
-          
-          buffers[idx] = buffer;
-          audioBufferCache.current.set(messageId, buffers);
+          buffer = await fetchSentenceAudio(idx);
         }
 
-        // No pre-fetching since we only play two sentences
-        /*
+        if (!buffer) {
+          fetchAndPlay(idx + 1);
+          return;
+        }
+
+        // Proactively pre-fetch the next sentence as soon as we start playing the current one
         if (idx + 1 < ttsSentences.length && !buffers[idx + 1]) {
-          (async () => {
-            try {
-              const sentence = ttsSentences[idx+1];
-              const prompt = lang === 'PT' 
-                ? `In perfect European Portuguese (with a distinct Portugal accent), with a warm, calm, clear, and professional female librarian voice, absolutely NEVER in Brazilian Portuguese, say: ${sentence}`
-                : `With a warm, calm, clear, and professional female voice with a gentle European Portuguese accent, say: ${sentence}`;
-              const resp = await ai.models.generateContent({
-                model: "gemini-3.1-flash-tts-preview",
-                contents: [{ parts: [{ text: prompt }] }],
-                config: {
-                  responseModalities: [Modality.AUDIO],
-                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-                },
-              });
-              const b64 = resp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-              if (b64) {
-                const bStr = atob(b64);
-                const bs = new Uint8Array(bStr.length);
-                for (let i = 0; i < bStr.length; i++) bs[i] = bStr.charCodeAt(i);
-                const b = audioContext.createBuffer(1, bStr.length / 2, 24000);
-                const cd = b.getChannelData(0);
-                const dv = new DataView(bs.buffer);
-                for (let i = 0; i < bStr.length / 2; i++) cd[i] = dv.getInt16(i * 2, true) / 32768;
-                buffers[idx+1] = b;
-                audioBufferCache.current.set(messageId, buffers);
-              }
-            } catch (e) { console.warn('Pre-fetch failed', e); }
-          })();
+          fetchSentenceAudio(idx + 1).catch(e => console.warn('Background pre-fetch failed:', e));
         }
-        */
 
         const source = audioContext.createBufferSource();
         source.buffer = buffer;
@@ -527,6 +515,12 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
         fetchAndPlay(idx + 1);
       }
     };
+
+    // Kick off parallel fetch for the first two sentences immediately for ultra-low latency
+    fetchSentenceAudio(0).catch(e => console.warn("Init fetch 0 failed:", e));
+    if (ttsSentences.length > 1) {
+      fetchSentenceAudio(1).catch(e => console.warn("Init fetch 1 failed:", e));
+    }
 
     fetchAndPlay(startIdx, initialOffset);
   };
@@ -996,7 +990,7 @@ https://salina.web.ua.pt/media_talks/20250411_5asJOS_UPT`
                   rel="noopener noreferrer"
                   className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest hover:underline block"
                 >
-                  Assistente IA das Bibliotecas UA v5.3
+                  Assistente IA das Bibliotecas UA v5.4
                 </a>
               </div>
             </div>
