@@ -187,7 +187,7 @@ export default function App() {
   useEffect(() => {
     const fetchKbFiles = async () => {
       try {
-        const response = await fetch('/api/kb');
+        const response = await fetch('/kb-data.json');
         if (response.ok) {
           const data = await response.json();
           console.log(`Loaded ${data.length} KB files`);
