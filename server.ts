@@ -175,104 +175,6 @@ async function startServer() {
     }
   });
 
-  // KB files endpoint
-  app.get('/api/kb', async (req, res) => {
-    const kbPath = path.join(__dirname, 'KB');
-    console.log(`[KB] Lendo diretório: ${kbPath}`);
-    
-    if (!existsSync(kbPath)) {
-      console.warn(`[KB] Aviso: Diretório ${kbPath} não encontrado.`);
-      return res.json([]);
-    }
-
-    try {
-      const files = await fs.readdir(kbPath);
-      console.log(`[KB] Encontrados ${files.length} arquivos totais.`);
-      const supportedFiles = files.filter(f => f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.pdf'));
-      console.log(`[KB] Processando ${supportedFiles.length} arquivos suportados.`);
-      
-      const kbData = await Promise.all(supportedFiles.map(async (filename) => {
-        try {
-          const filePath = path.join(kbPath, filename);
-          const stats = await fs.stat(filePath);
-          let content = "";
-          const type = path.extname(filename).toLowerCase();
-
-          if (type === '.pdf') {
-            try {
-              const dataBuffer = readFileSync(filePath);
-              if (dataBuffer.length === 0) {
-                content = `[O PDF ${filename} está vazio]`;
-              } else {
-                const originalWarn = console.warn;
-                const originalLog = console.log;
-                console.warn = (...args: any[]) => {
-                  if (typeof args[0] === 'string' && (args[0].includes('TT:') || args[0].includes('Warning:'))) return;
-                  originalWarn(...args);
-                };
-                console.log = (...args: any[]) => {
-                  if (typeof args[0] === 'string' && (args[0].includes('TT:') || args[0].includes('Warning:'))) return;
-                  originalLog(...args);
-                };
-
-                try {
-                  const pdfParser = typeof pdf === 'function' ? pdf : (pdf as any).default;
-                  if (typeof pdfParser === 'function') {
-                    const data = await pdfParser(dataBuffer);
-                    content = data.text || "";
-                  } else {
-                    content = `[Erro: pdf-parse não disponível para ${filename}]`;
-                  }
-                } finally {
-                  console.warn = originalWarn;
-                  console.log = originalLog;
-                }
-              }
-            } catch (err) {
-              console.error(`Error parsing PDF ${filename}:`, err);
-              content = `[Erro ao extrair texto do PDF: ${filename}]`;
-            }
-          } else {
-            content = await fs.readFile(filePath, 'utf-8');
-          }
-
-          return {
-            name: filename,
-            content: content,
-            size: stats.size,
-            type: type,
-            downloadUrl: `/kb-files/${filename}`
-          };
-        } catch (err) {
-          console.error(`Error processing file ${filename}:`, err);
-          return null;
-        }
-      }));
-      
-      res.json(kbData.filter(item => item !== null));
-    } catch (error) {
-      console.error('Error reading KB directory:', error);
-      res.status(500).json({ error: 'Failed to read KB files' });
-    }
-  });
-
-  // Debug endpoint for KB
-  app.get('/api/debug-kb', async (req, res) => {
-    const kbPath = path.join(__dirname, 'KB');
-    const exists = existsSync(kbPath);
-    let files: string[] = [];
-    if (exists) {
-      files = await fs.readdir(kbPath);
-    }
-    res.json({
-      dirname: __dirname,
-      kbPath,
-      exists,
-      fileCount: files.length,
-      files: files.slice(0, 50) // Limit to 50 for safety
-    });
-  });
-
   // API usage logging endpoint
   app.post('/api/log-usage', (req, res) => {
     const { api, message, inputTokens, outputTokens, costEstimate } = req.body;
@@ -290,8 +192,6 @@ async function startServer() {
   app.post('/api/chat', async (req, res) => {
     const { message, history, systemInstruction } = req.body;
     
-    // This is already logged by /api/log-usage from frontend, 
-    // but we keep a specific server-side trace for the proxy execution.
     console.log(`[SERVER PROXY] Executing IAEDU request for: "${message.substring(0, 50)}..."`);
 
     const endpoint = process.env.IAEDU_ENDPOINT;
@@ -303,7 +203,6 @@ async function startServer() {
     }
 
     try {
-      // Clean up endpoint URL (remove potential double slashes except for protocol)
       const cleanEndpoint = endpoint.replace(/([^:]\/)\/+/g, "$1");
       console.log(`[IAEDU] Chamando endpoint: ${cleanEndpoint}`);
       
@@ -343,7 +242,6 @@ async function startServer() {
       if (response.ok) {
         console.log('[IAEDU] Resposta recebida, iniciando stream para o cliente...');
         
-        // Set headers for streaming
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Transfer-Encoding', 'chunked');
 
@@ -400,9 +298,6 @@ async function startServer() {
       });
     }
   });
-
-  // Serve KB files for download
-  app.use('/kb-files', express.static(path.join(__dirname, 'KB')));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
